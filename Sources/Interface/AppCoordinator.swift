@@ -126,6 +126,11 @@ public final class AppCoordinator {
         }
         if panel.settings != new { panel.settings = new }
         showProblems()
+        // Draws the panel once so the first show takes about as long as later ones; queued so
+        // it runs after the hotkey works and the build has started (docs/decisions/0012-warm-panel.md).
+        if old == nil {
+            Task { [weak self] in self?.panel.prepare() }
+        }
     }
 
     /// Shows the panel, as a second launch of the app asks: the way in when the hotkey doesn't
