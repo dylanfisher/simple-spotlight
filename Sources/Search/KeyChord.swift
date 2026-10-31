@@ -22,6 +22,11 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
             (.control, "ctrl", "⌃"), (.option, "opt", "⌥"), (.shift, "shift", "⇧"),
             (.command, "cmd", "⌘"),
         ]
+
+        /// The modifiers as a menu shows them: "⌃⌥".
+        public var symbols: String {
+            Self.named.filter { contains($0.modifier) }.map(\.symbol).joined()
+        }
     }
 
     /// A key a chord can end with. The raw value is its name in the config file.
@@ -235,8 +240,7 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
 
     /// The chord as a menu shows it, for messages: "⌘Space", "⌃⌥K".
     public var description: String {
-        Modifiers.named.filter { modifiers.contains($0.modifier) }.map(\.symbol).joined()
-            + key.symbol
+        modifiers.symbols + key.symbol
     }
 }
 

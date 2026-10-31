@@ -23,6 +23,12 @@ public actor ConfigStore {
         /// Whether the file is there but sets nothing, as it has an error or can't be read.
         /// `update` refuses to change it then, since the user is fixing it.
         public let isFileBroken: Bool
+
+        public init(settings: Settings, errors: [ConfigError], isFileBroken: Bool) {
+            self.settings = settings
+            self.errors = errors
+            self.isFileBroken = isFileBroken
+        }
     }
 
     /// Starts watching `folder`, calling `onChange` after each batch of changes in it, and
