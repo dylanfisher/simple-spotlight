@@ -19,16 +19,21 @@ In the panel, type to search apps, System Settings panes and arithmetic (`2^10`,
 `sqrt(2)`). Return opens the selected row or copies a calculator answer. ↑ ↓ (or Ctrl-P Ctrl-N)
 move the selection, ⌘1…⌘9 open a row, ⌘Return shows an app in Finder, ⌘C copies an app's path
 (a pane's `x-apple.systempreferences:` link, a calculator answer) when no text is selected, and
-Esc clears the query or hides the panel. ⌘Q quits; so does the "Quit Simple Spotlight" row.
+Esc clears the query or hides the panel. ⌘, opens Settings, as does the gear that shows at the
+right of the field while Option is held, and the "Simple Spotlight Settings" row. ⌘Q quits; so
+does the "Quit Simple Spotlight" row.
 
 ## Configure
 
-Settings live in `~/.config/simple-spotlight/config.json`. ⌘, in the panel (or the "Simple
-Spotlight Config" row) opens it. The app writes the default file the first time: every key at
+Settings live in `~/.config/simple-spotlight/config.json`, and the Settings window (⌘, in the
+panel) changes them there: each change replaces that one value in the file, or adds the key with
+its comment, and leaves the rest of the file, your comments included, as it is. Its "Open
+config.json" button opens the file. The app writes the default file the first time: every key at
 its default, with a comment above it saying what it does and what it accepts. `Settings.Keys` in
 `Sources/Search/Settings.swift` declares them. The file allows comments and trailing commas. A
-save applies right away; if the file has an error, a row at the top of the panel names the line,
-and the last good settings stay.
+save applies right away, in the Settings window too; if the file has an error, a row at the top
+of the panel names the line, the last good settings stay, and the Settings window lists the
+errors and changes nothing until the file is fixed.
 
 Set `"launchAtLogin": true` to start the app at login. It registers the app where it is, so
 launch it from where it will stay. If macOS asks for approval, a row in the panel opens Login

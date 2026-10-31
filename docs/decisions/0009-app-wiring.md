@@ -1,7 +1,8 @@
 # 0009. App wiring: the hotkey, live config, problem rows and the conflict notice
 
 - **Date:** 2026-10-31
-- **Status:** accepted
+- **Status:** accepted; amended by [0015](0015-settings-window.md) (the conflict alert is
+  skipped while the settings window is open, and points to Settings)
 
 ## Context
 

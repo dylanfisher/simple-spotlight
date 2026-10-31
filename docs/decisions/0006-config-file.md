@@ -1,7 +1,8 @@
 # 0006. The config file follows Searcher's, read-only apart from the default file
 
 - **Date:** 2026-10-31
-- **Status:** accepted
+- **Status:** accepted; amended by [0015](0015-settings-window.md) (the settings window writes
+  changes into the file)
 
 ## Context
 
