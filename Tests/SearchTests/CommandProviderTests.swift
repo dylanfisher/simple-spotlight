@@ -11,7 +11,7 @@ private let commands = CommandProvider(appName: "Simple Spotlight")
     #expect(
         commands.items.map(\.target)
             == CommandProvider.Command.allCases.map {
-                .command($0.rawValue)
+                .command($0.id)
             })
     #expect(Set(commands.items.map(\.id)).count == commands.items.count)
 }
@@ -29,7 +29,8 @@ private let commands = CommandProvider(appName: "Simple Spotlight")
 
 @Test func readsTheCommandOfAnIdentifier() {
     for command in CommandProvider.Command.allCases {
-        #expect(CommandProvider.Command(rawValue: command.rawValue) == command)
+        #expect(CommandProvider.Command(id: command.id) == command)
     }
-    #expect(CommandProvider.Command(rawValue: "simple-spotlight.unknown") == nil)
+    #expect(CommandProvider.Command(id: "simple-spotlight.unknown") == nil)
+    #expect(CommandProvider.Command(id: "quit") == nil)
 }

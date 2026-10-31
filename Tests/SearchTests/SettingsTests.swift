@@ -76,7 +76,7 @@ import Testing
     other.calculator = false
     other.maxResults = 3
     other.launchAtLogin = true
-    #expect(base.asksForSameIndex(as: other))
+    #expect(base.indexKeys == other.indexKeys)
 
     let changes: [(inout Settings) -> Void] = [
         { $0.searchApplications = false }, { $0.searchSystemSettings = false },
@@ -85,6 +85,6 @@ import Testing
     for change in changes {
         var changed = base
         change(&changed)
-        #expect(!base.asksForSameIndex(as: changed))
+        #expect(base.indexKeys != changed.indexKeys)
     }
 }

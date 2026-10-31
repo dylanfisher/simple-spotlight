@@ -20,35 +20,49 @@ public struct Settings: Sendable, Equatable {
     /// Every setting at its default.
     public init() {}
 
-    /// The index these settings ask for: apps from `appFolders`, `~` standing for `home`, and
-    /// System Settings panes, each only when its setting is on, less `excludedApps`.
+    /// The keys the index is built from. Two settings with equal `indexKeys` ask for the same
+    /// index, so the app rebuilds only when they differ.
+    public var indexKeys: IndexKeys {
+        IndexKeys(
+            searchApplications: searchApplications, searchSystemSettings: searchSystemSettings,
+            appFolders: appFolders, excludedApps: excludedApps)
+    }
+
+    /// The index these settings ask for; see `IndexKeys.builder(home:languages:)`.
     public func indexBuilder(
         home: URL = HomePath.current,
         languages: [String] = Locale.preferredLanguages
     ) -> IndexBuilder {
-        let apps =
-            searchApplications
-            ? AppProvider(
-                folders: appFolders.map { HomePath.folder($0, home: home) }, languages: languages,
-                home: home)
-            : AppProvider(folders: [], languages: languages, extraApps: [], home: home)
-        let panes =
-            searchSystemSettings
-            ? SettingsPaneProvider(
-                preferencePaneFolders: SettingsPaneProvider.standardPreferencePaneFolders(
-                    home: home),
-                languages: languages)
-            : SettingsPaneProvider(
-                extensionFolders: [], preferencePaneFolders: [], languages: languages)
-        return IndexBuilder(apps: apps, settingsPanes: panes, excludedIDs: Set(excludedApps))
+        indexKeys.builder(home: home, languages: languages)
     }
 
-    /// Whether `other` asks for the index these settings do: the same values for every key
-    /// `indexBuilder(home:languages:)` reads.
-    public func asksForSameIndex(as other: Settings) -> Bool {
-        searchApplications == other.searchApplications
-            && searchSystemSettings == other.searchSystemSettings
-            && appFolders == other.appFolders && excludedApps == other.excludedApps
+    /// The settings the index reads, and nothing else, so the builder can't read a key that a
+    /// change of `indexKeys` wouldn't notice.
+    public struct IndexKeys: Sendable, Equatable {
+        let searchApplications: Bool
+        let searchSystemSettings: Bool
+        let appFolders: [String]
+        let excludedApps: [String]
+
+        /// Apps from `appFolders`, `~` standing for `home`, and System Settings panes, each only
+        /// when its setting is on, less `excludedApps`.
+        func builder(home: URL, languages: [String]) -> IndexBuilder {
+            let apps =
+                searchApplications
+                ? AppProvider(
+                    folders: appFolders.map { HomePath.folder($0, home: home) },
+                    languages: languages, home: home)
+                : AppProvider(folders: [], languages: languages, extraApps: [], home: home)
+            let panes =
+                searchSystemSettings
+                ? SettingsPaneProvider(
+                    preferencePaneFolders: SettingsPaneProvider.standardPreferencePaneFolders(
+                        home: home),
+                    languages: languages)
+                : SettingsPaneProvider(
+                    extensionFolders: [], preferencePaneFolders: [], languages: languages)
+            return IndexBuilder(apps: apps, settingsPanes: panes, excludedIDs: Set(excludedApps))
+        }
     }
 }
 

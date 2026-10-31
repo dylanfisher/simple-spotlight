@@ -35,9 +35,6 @@ public struct LoginItem {
         return url
     }()
 
-    /// The id of the row that says what is wrong.
-    static let problemID = "simple-spotlight.problem.loginItem"
-
     private let service: any LoginItemService
     private let appName: String
 
@@ -73,8 +70,7 @@ public struct LoginItem {
     }
 
     private func problem(_ title: String, subtitle: String) -> SearchItem {
-        SearchItem(
-            id: Self.problemID, kind: .problem, title: title, subtitle: subtitle,
-            target: .openURL(Self.settingsURL))
+        ProblemItems.row(
+            .loginItem, title: title, subtitle: subtitle, target: .openURL(Self.settingsURL))
     }
 }

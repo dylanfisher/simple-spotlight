@@ -63,6 +63,7 @@ private final class FakeService: LoginItemService {
 
     #expect(row.title == "Allow Simple Spotlight in Login Items to open it at login")
     #expect(row.kind == .problem)
+    #expect(row.id == ProblemItems.ID.loginItem.id)
     #expect(row.target == .openURL(LoginItem.settingsURL))
 }
 

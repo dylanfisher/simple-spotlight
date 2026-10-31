@@ -75,7 +75,7 @@ public final class AppCoordinator {
         if old?.hotkey != new.hotkey {
             register(new.hotkey)
         }
-        if old.map({ !$0.asksForSameIndex(as: new) }) ?? true {
+        if old?.indexKeys != new.indexKeys {
             rebuildIndex(for: new)
         }
         if old?.launchAtLogin != new.launchAtLogin {
@@ -181,7 +181,7 @@ public final class AppCoordinator {
     }
 
     private func run(command id: String) {
-        switch CommandProvider.Command(rawValue: id) {
+        switch CommandProvider.Command(id: id) {
         case .openConfig: panel.openConfigFile()
         case .quit: quit()
         case nil: preconditionFailure("no command \(id)")

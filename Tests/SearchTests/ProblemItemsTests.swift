@@ -20,7 +20,7 @@ private let file = URL(filePath: "/tmp/simple-spotlight-test/config.json")
     #expect(row.title == "Config error: line 3: maxResults must be a whole number")
     #expect(row.subtitle == "1 more error · Return opens /tmp/simple-spotlight-test/config.json")
     #expect(row.kind == .problem)
-    #expect(row.target == .command(CommandProvider.Command.openConfig.rawValue))
+    #expect(row.target == .command(CommandProvider.Command.openConfig.id))
 }
 
 @Test func namesTheFileForAnErrorWithNoLine() throws {
@@ -67,4 +67,6 @@ private let file = URL(filePath: "/tmp/simple-spotlight-test/config.json")
     let config = try #require(ProblemItems.config([ConfigError(reason: "x")], file: file))
     let index = try #require(ProblemItems.index([IndexProblem(path: "/a", reason: "b")]))
     #expect(config.id != index.id)
+    #expect(Set(ProblemItems.ID.allCases.map(\.id)).count == ProblemItems.ID.allCases.count)
+    #expect(ProblemItems.ID.allCases.allSatisfy { $0.id.hasPrefix(SearchItem.builtInID("")) })
 }

@@ -37,6 +37,12 @@ public struct SearchItem: Sendable, Identifiable {
     /// `alternateNames` folded, likewise.
     public let foldedAlternates: [FoldedText]
 
+    /// The id of a row the app makes itself, such as a command or a problem, in a namespace
+    /// no bundle ID or path uses.
+    public static func builtInID(_ name: String) -> String {
+        "simple-spotlight.\(name)"
+    }
+
     public init(
         id: String, kind: Kind, title: String, subtitle: String?, target: Target,
         alternateNames: [String] = []
