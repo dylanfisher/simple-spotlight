@@ -13,84 +13,57 @@ the default chord, belongs to Spotlight until the user turns Spotlight's shortcu
 
 ## Decision
 
-- **A coordinator in Interface, a thin delegate in the app.** `AppCoordinator` holds the logic,
-  with the hotkey, login item, index build and notice injected so tests drive it without
-  touching the system. `AppDelegate` creates it, starts the store, and forwards each state, the
-  reopen event and termination. Launch returns at once: the store reads the file off the main
-  actor, and the first state registers the hotkey.
-- **Each part runs only when its settings change.** On each state the hotkey is registered first
-  (when `hotkey` changed), then the index rebuilt off the main actor (when
-  `Settings.asksForSameIndex(as:)` says the index keys changed; a build still running is
-  cancelled), then the login item followed (when `launchAtLogin` changed), and the settings and
-  problem rows always passed to the panel. The first state counts as a change of every key. The
-  built index gets the two command rows appended, and the icon cache is cleared on each swap.
-  Before the first build the index holds only the commands.
-- **Problem rows sit above the results** (`SearchItem.Kind.problem`, a warning triangle), for any
-  query including an empty one, at most one per source:
-  - **Config file:** "Config error: line 3: …" for an error on a line, "Config file couldn't be
-    read: …" for one that isn't. The subtitle counts the other errors and says Return opens the
-    file. Return runs the config command, which creates the default file if needed.
-  - **Login item:** when registering or unregistering fails, or macOS wants approval. Return
-    opens System Settings' Login Items pane.
-  - **Index:** "Couldn't search Apps" for one problem, "Couldn't search 3 folders or apps" for
-    several, the first problem in the subtitle. Return copies every problem, a line each, since
-    a row shows only one and the fixes vary (a missing folder is fixed in the config file, an
-    unreadable bundle is not).
-  An opener failure after the panel hides (an app that won't launch) is an alert, not a row: it
-  is about one action, not a state that lasts.
-- **Built-in commands are index items.** `CommandProvider` makes "<name> Config" and "Quit
-  <name>" from the bundle's `CFBundleName`; each command's raw value is both the row's id and
-  its `.command` identifier.
-- **The hotkey is Carbon's `RegisterEventHotKey`** with a handler on the application event
-  target. It needs no Accessibility permission, which `CGEventTap` and `NSEvent` global
-  monitors do. Changing the chord unregisters the old one first; quitting unregisters it.
-- **Conflicts are checked against macOS's own shortcuts before registering.** Measured on macOS
-  26.6: `RegisterEventHotKey` returns `noErr` for ⌘Space while Spotlight's shortcut is on, and
-  only returns `eventHotKeyExistsErr` when another app registered the chord through Carbon. Since
-  macOS handles its own shortcuts before any app, a registered ⌘Space then never fires.
-  `CopySymbolicHotKeys` lists macOS's shortcuts with key code, Carbon modifiers and whether each
-  is on (⌘Space showed as code 49, modifiers 256, on). It gives no names or IDs, and
-  `com.apple.symbolichotkeys` holds no entry for a shortcut left at its default, so the notice
-  names Spotlight only for Spotlight's default chords (⌘Space, ⌥⌘Space) and otherwise says "the
-  shortcut that uses ⌃F2". Modifiers outside the four a chord holds (macOS adds the Fn mask to
-  F-key shortcuts) are ignored in the comparison. The chord is registered even when it
-  conflicts, so it starts working as soon as the user turns the system shortcut off.
-- **The notice is an alert, once per chord per run.** It names the chord and the path System
-  Settings → Keyboard → Keyboard Shortcuts…, with buttons to open that section, to open the
-  config file, and OK, and says a second launch shows the panel meanwhile. The section is
-  `x-apple.systempreferences:com.apple.Keyboard-Settings.extension?Shortcuts`; "Shortcuts" is
-  one of the keys of the pane's `Keyboard.searchTerms`, which System Settings uses as anchors,
-  and an anchor it doesn't know opens the pane.
-- **Alerts run from the run loop, not from a task.** Found by running the app: an alert's modal
-  loop started inside a main-actor task holds the main dispatch queue, so the index built
-  during the alert was never installed. `AlertPresenter` starts the modal through
-  `RunLoop.main.perform`, where the queue keeps draining.
-- **A second launch shows the panel** (`applicationShouldHandleReopen`), the way in when the
-  hotkey doesn't work.
-- **Login item:** `SMAppService.mainApp`, checked against its status first so an unchanged
-  setting does nothing; `requiresApproval` after registering becomes a row.
-- **Logging:** `os.Logger` with the bundle's ID as subsystem, category `app`: launch, hotkey
-  registration and conflicts, each index build (count, problems, time), config errors, reopen.
+- **Logic in an Interface coordinator, a thin delegate in the app**, so tests drive the wiring
+  with the hotkey, login item, index build and alert injected and nothing touches the system.
+- **Launch waits for nothing.** The store reads the file off the main actor; the first state
+  registers the hotkey before the index build starts, and the index is swapped in when built.
+- **Each part runs only when its own settings change.** The keys the index reads are one value,
+  `Settings.IndexKeys`, and the builder is a method on it, so a key the builder can read is a key
+  whose change rebuilds. A newer build cancels an older one, and an older one that finishes last
+  is dropped. The panel searches only while shown, so a config save makes no VoiceOver
+  announcement and no main-actor scan.
+- **What is wrong shows as rows above the results**, at most one per source (config file, hotkey,
+  login item, index), for any query. A row for a lasting state is noticed when the user next
+  opens the panel, without an interruption. Return goes to where the problem is fixed: the
+  config file, Keyboard Shortcuts, Login Items. The index row copies every problem instead,
+  because one row shows only one and their fixes differ. A failed open is an alert instead: it
+  is about one action the user just took, not a state.
+- **The hotkey is Carbon's `RegisterEventHotKey`**, the one way to take a chord from every app
+  without the Accessibility permission. A new chord is registered before the old one is released,
+  so a chord another app holds leaves the working one.
+- **Conflicts are checked against macOS's own shortcuts first.** Measured on macOS 26.6:
+  Carbon registers ⌘Space without error while Spotlight's shortcut is on, and macOS then keeps
+  the keys, so registration alone can't tell. `CopySymbolicHotKeys` lists macOS's shortcuts with
+  key, modifiers and whether each is on, but no names; the shortcuts' defaults file has no entry
+  for one left at its default. So Spotlight is named only for its default chords. The chord is
+  registered even when it conflicts, so it works the moment the user frees it, and a press
+  clears the conflict row.
+- **The conflict alert shows once per chord, ever.** The chords already shown are kept in the
+  app's state file, so a login item launch doesn't take focus each login; afterwards the row
+  carries the message. The alert runs from the run loop, because a modal loop inside a
+  main-actor task holds the main queue and stopped the index from being installed while it
+  showed.
+- **A second launch shows the panel**, the way in while the hotkey doesn't work.
+- **The login item follows `launchAtLogin` both ways**, so false removes an entry the user added
+  by hand. Its status is read again each time the panel shows, which is cheap, so an approval in
+  System Settings clears the row.
+- **Logs** use the bundle's ID as subsystem; paths and config values in them are private.
 
 ## Alternatives considered
 
-- **Show the conflict as a problem row** — rejected as the only signal: with the hotkey dead the
-  user may never see the panel. The alert can't be missed.
+- **The conflict only as a row** — rejected for the first time: with the hotkey dead the user
+  may never open the panel to see it.
+- **The alert at every launch** — rejected: with `launchAtLogin` it takes focus at each login.
 - **Skip registering a chord macOS holds** — rejected: the user would have to relaunch after
   freeing it.
-- **Read `com.apple.symbolichotkeys` to name the shortcut** — rejected: a shortcut at its default
-  has no entry there, so it misses the common case.
-- **One row per config error** — rejected: rows count toward `maxResults`, and a broken file can
-  have ten errors; the file is where all of them are fixed.
-- **Compare `IndexBuilder` values to decide a rebuild** — rejected: its providers aren't
-  `Equatable`, and the comparison would sit far from the keys. `asksForSameIndex(as:)` sits
-  beside `indexBuilder(home:languages:)` and reads the same four keys.
+- **Read the shortcuts' defaults file to name the owner** — rejected: a shortcut at its default
+  isn't in it.
+- **One row per config error** — rejected: rows count toward `maxResults`, and the file is where
+  all of them are fixed.
 
 ## Consequences
 
-While the conflict alert is open it is app-modal: a second launch and a quit wait until it is
-dismissed. Measured on a release build (Apple silicon, macOS 26.6): the hotkey registers about
-20 ms after the app's first log line, and 61–82 ms after `open` warm (264 ms for the first
-launch of a freshly signed build); the index installs about 45 ms later. Idle footprint is
-18–21 MB (`footprint`), RSS about 60 MB. The login item was not registered on the build machine,
-so how an ad hoc signed bundle in `.build` fares with `SMAppService` is unverified.
+The conflict alert is app-modal: while it is open, a second launch and a quit wait. Measured on
+a release build: the hotkey registers about 20 ms after the app's first log line and 61–82 ms
+after `open` warm; idle footprint 18–21 MB. How `SMAppService` treats an ad hoc signed bundle in
+`.build` is unverified.
