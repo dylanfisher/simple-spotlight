@@ -414,6 +414,21 @@ private final class Fixture {
             == SettingsModel.Conflict(chord: settings.hotkey, conflict: .systemShortcut))
 }
 
+/// Closing the window while it records stops the recorder, which registers the chord again.
+@MainActor @Test func closingTheWindowWhileRecordingShowsNoAlert() async {
+    let fixture = Fixture()
+    fixture.systemHotKeys = [spotlightShortcut]
+    fixture.coordinator.openSettings()
+    await fixture.apply(Search.Settings())
+    fixture.coordinator.settingsModel.recorder.start()
+
+    fixture.coordinator.settingsWindow.windowWillClose(
+        Notification(name: NSWindow.willCloseNotification))
+    await fixture.coordinator.noticeDecision?.value
+
+    #expect(fixture.notices.isEmpty)
+}
+
 @MainActor @Test func aPressOfTheHotkeyClearsTheWindowsConflict() async throws {
     let fixture = Fixture()
     fixture.systemHotKeys = [

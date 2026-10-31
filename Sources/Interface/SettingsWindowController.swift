@@ -61,8 +61,10 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     public func windowWillClose(_ notification: Notification) {
-        isShown = false
+        // Stopping registers the hotkey again, which tells of a conflict by alert unless the
+        // window is still counted open to say it.
         model.recorder.stop()
+        isShown = false
         // An agent app with no window left would keep the keys, with nothing to type into.
         if let previousApp, !previousApp.isTerminated { previousApp.activate() }
         previousApp = nil
