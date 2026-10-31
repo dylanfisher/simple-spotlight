@@ -19,9 +19,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     public var index: SearchIndex {
         didSet { search(keepingSelection: true) }
     }
-    /// Read for `maxResults`, `calculator` and `showOnAllDisplays`. Changing `maxResults` or
-    /// `calculator` searches again, as setting `index` does; searching happens only while the
-    /// panel shows. The next show reads `showOnAllDisplays`.
+    /// Read for `maxResults`, `calculator`, `dimUnused`, `dimAfterDays` and `showOnAllDisplays`.
+    /// Changing any but `showOnAllDisplays` searches again, as setting `index` does; searching
+    /// happens only while the panel shows. The next show reads `showOnAllDisplays`.
     public var settings: Search.Settings {
         didSet {
             if settings.showOnAllDisplays, !oldValue.showOnAllDisplays {
@@ -33,10 +33,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             } else if !settings.showOnAllDisplays, oldValue.showOnAllDisplays {
                 releaseUnusedPanels()
             }
+            let dimming =
+                settings.dimUnused != oldValue.dimUnused
+                || settings.dimAfterDays != oldValue.dimAfterDays
             guard
-                settings.maxResults != oldValue.maxResults
+                dimming || settings.maxResults != oldValue.maxResults
                     || settings.calculator != oldValue.calculator
             else { return }
+            if dimming, isShown { takeUsage() }
             search(keepingSelection: true)
         }
     }
@@ -51,7 +55,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         didSet {
             // Showing works the frecencies out, for the time it shows.
             guard isShown else { return }
-            boost = UsageBoost(usage, at: now())
+            takeUsage()
             search(keepingSelection: true)
         }
     }
@@ -107,6 +111,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private(set) var configFileOpened: Task<Void, Never>?
     /// `usage`'s frecencies as of the last show, so a keystroke only looks them up.
     private var boost = UsageBoost.none
+    /// The items `usage` and `settings` dim, as of the last show, likewise.
+    private var dimmed = DimmedItems.none
     private let calculator: CalculatorProvider
     private let opener: any ResultOpener
     private let recordOpen: @MainActor (_ id: String, _ query: String) -> Void
@@ -211,7 +217,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             let fit = rowsThatFit(slots[index])
             if slots[index].rows.rootView.limit != fit { slots[index].rows.rootView.limit = fit }
         }
-        boost = UsageBoost(usage, at: now())
+        takeUsage()
         search(keepingSelection: true)
         // The field selects its whole text as it takes the keys, so typing replaces the query.
         panel.makeFirstResponder(panel.field)
@@ -222,6 +228,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         }
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
+    }
+
+    /// Works out `usage`'s frecencies and the items it dims as of now, for the searches until
+    /// the next show or change.
+    private func takeUsage() {
+        let now = now()
+        boost = UsageBoost(usage, at: now)
+        dimmed = DimmedItems(usage, settings: settings, at: now)
     }
 
     /// Moves the keys to `clicked`, a panel on another display, as a click in it does. The
@@ -340,14 +354,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         guard isShown else { return }
         let query = query
         let kept = keepingSelection ? selectedRow?.item.id : nil
-        var rows = leadingItems.map { SearchState.Row(item: $0, ranges: []) }
+        var rows = leadingItems.map { row($0, ranges: []) }
         if settings.calculator, let item = calculator.item(for: query) {
-            rows.append(SearchState.Row(item: item, ranges: []))
+            rows.append(row(item, ranges: []))
         }
         let limit = min(settings.maxResults, rowsThatFit(slots[keyIndex]))
         let room = max(limit - rows.count, 0)
         rows += index.results(for: query, limit: room, usage: boost).map {
-            SearchState.Row(item: $0.item, ranges: $0.ranges)
+            row($0.item, ranges: $0.ranges)
         }
         rows = Array(rows.prefix(limit))
         state.rows = rows
@@ -372,6 +386,10 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             }
             slot.panel.fit(rows: min(rows.count, rowsThatFit(slot)))
         }
+    }
+
+    private func row(_ item: SearchItem, ranges: [Range<String.Index>]) -> SearchState.Row {
+        SearchState.Row(item: item, ranges: ranges, dimmed: dimmed.contains(item))
     }
 
     /// The rows with room between `slot`'s panel's top and the bottom of its screen's visible
@@ -410,7 +428,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         guard state.rows.indices.contains(index) else { return }
         let item = state.rows[index].item
         hide()
-        if item.kind == .app || item.kind == .settingsPane { recordOpen(item.id, query) }
+        if item.kind.countsAsOpen { recordOpen(item.id, query) }
         switch item.target {
         case .openFile(let url) where item.kind == .app:
             opener.openApplication(at: url)

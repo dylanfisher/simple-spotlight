@@ -22,6 +22,7 @@ struct ResultRow: View {
     /// The loaded icon for a `.file` icon; nil until it loads.
     let image: NSImage?
     let isSelected: Bool
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(spacing: 10) {
@@ -34,6 +35,10 @@ struct ResultRow: View {
             }
             Spacer(minLength: 0)
         }
+        .opacity(
+            Self.contentOpacity(
+                dimmed: row.dimmed, selected: isSelected, highContrast: contrast == .increased)
+        )
         .padding(.horizontal, 10)
         .frame(height: Self.height)
         .background {
@@ -63,6 +68,16 @@ struct ResultRow: View {
     /// `selectionFill` in a dark or light appearance, with or without Increase Contrast.
     nonisolated static func selectionFill(dark: Bool, highContrast: Bool) -> NSColor {
         NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.12 : 0.09) * (highContrast ? 2 : 1))
+    }
+
+    /// The opacity of a row's icon and text: lower for a row not opened lately, so the apps in
+    /// use stand out, but not for the selected row, which Return opens. Increase Contrast dims
+    /// it less, as the subtitle is already secondary and fades with it.
+    nonisolated static func contentOpacity(dimmed: Bool, selected: Bool, highContrast: Bool)
+        -> Double
+    {
+        guard dimmed, !selected else { return 1 }
+        return highContrast ? 0.7 : 0.55
     }
 
     /// The title with the matched characters bold, over the subtitle when there is one.

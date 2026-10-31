@@ -125,6 +125,8 @@ private final class Fixture {
     }
 
     var titles: [String] { controller.state.rows.map(\.item.title) }
+    /// The titles of the rows drawn subdued.
+    var dimmed: [String] { controller.state.rows.filter(\.dimmed).map(\.item.title) }
     var selection: Int { controller.state.selection }
 }
 
@@ -325,6 +327,65 @@ extension Fixture {
     fixture.controller.show()
 
     #expect(fixture.titles == ["Safari", "Microsoft Safety Scanner"])
+}
+
+/// Apps and panes not opened lately draw subdued (docs/decisions/0014-dim-unused.md); answers
+/// and commands never do.
+@MainActor @Test func rowsNotOpenedLatelyAreDimmed() throws {
+    let fixture = Fixture()
+    var usage = UsageStore.Usage()
+    usage.record("com.apple.Safari", query: "saf", at: fixture.now)
+    usage.record(
+        "com.microsoft.scanner", query: "scanner",
+        at: fixture.now.addingTimeInterval(-31 * 24 * 60 * 60))
+    fixture.controller.usage = usage
+
+    try fixture.type("saf")
+    #expect(fixture.titles == ["Safari", "Microsoft Safety Scanner"])
+    #expect(fixture.dimmed == ["Microsoft Safety Scanner"])
+
+    try fixture.type("blue")
+    #expect(fixture.dimmed == ["Bluetooth"])
+
+    try fixture.type("quit")
+    #expect(fixture.titles == ["Quit Simple Spotlight"])
+    #expect(fixture.dimmed.isEmpty)
+
+    try fixture.type("1+1")
+    #expect(fixture.dimmed.isEmpty)
+}
+
+@MainActor @Test func theDimSettingsApplyWhileShown() throws {
+    let fixture = Fixture()
+    var usage = UsageStore.Usage()
+    usage.record(
+        "com.apple.Safari", query: "saf", at: fixture.now.addingTimeInterval(-10 * 24 * 60 * 60))
+    fixture.controller.usage = usage
+    try fixture.type("saf")
+    #expect(fixture.dimmed == ["Microsoft Safety Scanner"])
+
+    fixture.controller.settings.dimAfterDays = 7
+    #expect(fixture.dimmed == ["Safari", "Microsoft Safety Scanner"])
+
+    fixture.controller.settings.dimUnused = false
+    #expect(fixture.dimmed.isEmpty)
+}
+
+/// Which rows dim is worked out at each show, as the frecencies are, so an item dims while the
+/// app runs.
+@MainActor @Test func dimmingIsWorkedOutAtEachShow() throws {
+    let fixture = Fixture()
+    var usage = UsageStore.Usage()
+    usage.record("com.apple.Safari", query: "saf", at: fixture.now)
+    fixture.controller.usage = usage
+    try fixture.type("safari")
+    #expect(fixture.dimmed.isEmpty)
+
+    fixture.controller.hide()
+    fixture.now += 31 * 24 * 60 * 60
+    fixture.controller.show()
+
+    #expect(fixture.dimmed == ["Safari"])
 }
 
 @MainActor @Test func returnOnTheCalculatorRowCopiesThePlainAnswer() throws {

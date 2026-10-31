@@ -100,6 +100,24 @@ private func boldCharacters(_ title: AttributedString) -> String {
     }
 }
 
+/// The selected row is the one Return opens, so it reads at full strength whatever its usage.
+@Test func aDimmedRowIsSubduedUnlessSelected() {
+    for highContrast in [false, true] {
+        let dim = ResultRow.contentOpacity(
+            dimmed: true, selected: false, highContrast: highContrast)
+        #expect(dim >= 0.5 && dim < 1)
+        #expect(
+            ResultRow.contentOpacity(dimmed: true, selected: true, highContrast: highContrast)
+                == 1)
+        #expect(
+            ResultRow.contentOpacity(dimmed: false, selected: false, highContrast: highContrast)
+                == 1)
+    }
+    #expect(
+        ResultRow.contentOpacity(dimmed: true, selected: false, highContrast: true)
+            > ResultRow.contentOpacity(dimmed: true, selected: false, highContrast: false))
+}
+
 @Test func aRowReadsItsTitleThenItsSubtitle() {
     let app = SearchItem(
         id: "com.apple.Safari", kind: .app, title: "Safari", subtitle: "/Applications/Safari.app",
