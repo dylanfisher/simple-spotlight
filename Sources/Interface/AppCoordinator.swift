@@ -50,6 +50,8 @@ public final class AppCoordinator {
     private var indexProblems: [IndexProblem] = []
     private var loginItemProblem: SearchItem?
     private var hotKeyProblem: SearchItem?
+    /// The times the panel has shown, for the timing `show` logs.
+    private var shows = 0
 
     /// - Parameters:
     ///   - configFile: Where the config file is, for its error row.
@@ -163,12 +165,27 @@ public final class AppCoordinator {
 
     /// Shows the panel, first reading the login item's status again, so a row asking for
     /// approval goes once the user has approved it in System Settings.
+    ///
+    /// Logs, at debug level, the time from the call to the commit of the Core Animation
+    /// transaction that puts the panel on screen with the field taking the keys: budget B1
+    /// (docs/performance.md). The frame reaches the display at the next refresh after that.
     private func show() {
+        let start = ContinuousClock.now
+        let wasShown = panel.isShown
         if let settings {
             loginItemProblem = loginItem.recheck(settings.launchAtLogin, shown: loginItemProblem)
             showProblems()
         }
         panel.show()
+        guard !wasShown else { return }
+        shows += 1
+        let count = shows
+        CATransaction.setCompletionBlock { [log] in
+            let elapsed = (ContinuousClock.now - start) / .milliseconds(1)
+            log.debug(
+                "show \(count, privacy: .public): \(elapsed, format: .fixed(precision: 1), privacy: .public) ms"
+            )
+        }
     }
 
     /// Registers `chord`, telling the user when it won't work: when a macOS shortcut that is
