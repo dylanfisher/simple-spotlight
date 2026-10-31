@@ -7,12 +7,13 @@ public struct SettingsPaneProvider: Sendable {
     public static let subtitle = "System Settings"
     /// The ExtensionKit extension point of a System Settings pane.
     public static let extensionPoint = "com.apple.Settings.extension.ui"
+    /// The System Settings app, which holds some panes and whose icon every pane's row shows.
+    public static let systemSettingsApp = URL(
+        filePath: "/System/Applications/System Settings.app", directoryHint: .isDirectory)
     /// Where macOS keeps its panes. Most are in ExtensionKit's folder; General is inside the app.
     public static let systemExtensionFolders = [
         URL(filePath: "/System/Library/ExtensionKit/Extensions", directoryHint: .isDirectory),
-        URL(
-            filePath: "/System/Applications/System Settings.app/Contents/PlugIns",
-            directoryHint: .isDirectory),
+        systemSettingsApp.appending(path: "Contents/PlugIns", directoryHint: .isDirectory),
     ]
     /// Where third-party `.prefPane` bundles are installed, for everyone and for the user whose
     /// home folder is `home`.
