@@ -45,3 +45,19 @@ private func spaces(_ count: Int) -> String { String(repeating: " ", count: coun
 @Test func keepsCarriageReturnsInComments() throws {
     #expect(try plain("{ // a\r\n}").get() == "{     \r\n}")
 }
+
+@Test func countsEachKindOfLineBreakOnce() {
+    let bytes = Array("a\nb\r\nc\rd".utf8)
+    #expect(ConfigText.line(at: 0, in: bytes) == 1)
+    #expect(ConfigText.line(at: 2, in: bytes) == 2)
+    #expect(ConfigText.line(at: 5, in: bytes) == 3)
+    #expect(ConfigText.line(at: 7, in: bytes) == 4)
+}
+
+@Test func endsALineCommentAtALoneCarriageReturn() throws {
+    #expect(try plain("[1, // a\r2]").get() == "[1," + spaces(5) + "\r2]")
+    let error = #expect(throws: ConfigText.UnclosedComment.self) {
+        try plain("{\r\r /* open\r").get()
+    }
+    #expect(error?.line == 3)
+}

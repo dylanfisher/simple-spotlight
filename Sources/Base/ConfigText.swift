@@ -25,10 +25,10 @@ public enum ConfigText {
                 index = stringEnd(bytes, from: index)
                 continue
             }
-            if byte == newline { line += 1 }
+            if isLineBreak(bytes, at: index) { line += 1 }
             let next = index + 1 < bytes.count ? bytes[index + 1] : nil
             if byte == slash, next == slash {
-                while index < bytes.count, bytes[index] != newline {
+                while index < bytes.count, bytes[index] != newline, bytes[index] != carriageReturn {
                     blank(index)
                     index += 1
                 }
@@ -43,7 +43,7 @@ public enum ConfigText {
                     !(bytes[index] == star && index + 1 < bytes.count
                         && bytes[index + 1] == slash)
                 {
-                    if bytes[index] == newline { line += 1 }
+                    if isLineBreak(bytes, at: index) { line += 1 }
                     blank(index)
                     index += 1
                 }
@@ -84,6 +84,19 @@ public enum ConfigText {
             index += 1
         }
         return blanked
+    }
+
+    /// Whether the byte at `index` ends a line: a line feed, or a carriage return that no line
+    /// feed follows, so `\n`, `\r\n` and a lone `\r` each end one line.
+    public static func isLineBreak(_ bytes: [UInt8], at index: Int) -> Bool {
+        bytes[index] == newline
+            || (bytes[index] == carriageReturn
+                && (index + 1 == bytes.count || bytes[index + 1] != newline))
+    }
+
+    /// The line, counted from 1, that the byte at `offset` is on.
+    public static func line(at offset: Int, in bytes: [UInt8]) -> Int {
+        1 + (0..<min(offset, bytes.count)).count { isLineBreak(bytes, at: $0) }
     }
 
     /// Whether `byte` is whitespace as JSON counts it.
