@@ -7,9 +7,34 @@ Requires macOS 15 or later.
 
 ## Use it
 
-To take over ⌘Space, turn off Spotlight's shortcut first: System Settings → Keyboard → Keyboard
-Shortcuts → Spotlight → uncheck "Show Spotlight search". The shortcut and what gets indexed are
-set in `~/.config/simple-spotlight/config.json`.
+Build and launch it with `./scripts/dev`. The app goes in `.build/SimpleSpotlight.app`, with no
+Dock icon or menu bar; the panel is the whole interface.
+
+The default hotkey is ⌘Space, which Spotlight holds until you free it: System Settings →
+Keyboard → Keyboard Shortcuts → Spotlight → uncheck "Show Spotlight search". Until then, the app
+says so once and shows the panel when launched again.
+
+In the panel, type to search apps, System Settings panes and arithmetic (`2^10`, `15% * 80`,
+`sqrt(2)`). Return opens the selected row or copies a calculator answer. ↑ ↓ (or Ctrl-P Ctrl-N)
+move the selection, ⌘1…⌘9 open a row, ⌘Return shows an app in Finder, and Esc clears the query
+or hides the panel. ⌘Q quits; so does the "Quit Simple Spotlight" row.
+
+## Configure
+
+Settings live in `~/.config/simple-spotlight/config.json`. ⌘, in the panel (or the "Simple
+Spotlight Config" row) opens it. The app writes the default file the first time: every key at
+its default, with a comment above it saying what it does and what it accepts. `Settings.Keys` in
+`Sources/Search/Settings.swift` declares them. The file allows comments and trailing commas. A
+save applies right away; if the file has an error, a row at the top of the panel names the line,
+and the last good settings stay.
+
+Set `"launchAtLogin": true` to start the app at login. It registers the app where it is, so
+launch it from where it will stay. If macOS asks for approval, a row in the panel opens Login
+Items.
+
+The app keeps what you open, to rank it higher, in
+`~/Library/Application Support/simple-spotlight/usage.json`, and the hotkey conflicts it has
+told you about in `state.json` beside it. Deleting either resets it.
 
 ## Develop
 
