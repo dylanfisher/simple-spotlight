@@ -20,17 +20,21 @@ Run the release bundle with a temporary home, so the real config, usage and stat
 never touched, and a config in it whose `hotkey` no other app holds, so no conflict alert shows:
 
 ```
-./scripts/bundle -c release
-open --env CFFIXED_USER_HOME=<temp>/home .build/SimpleSpotlight.app
-log stream --level debug --predicate 'subsystem == "<bundle ID>"'
+app=$(./scripts/bundle -c release)
+/usr/bin/log stream --level debug --predicate 'subsystem == "<bundle ID>"' &
+open --env CFFIXED_USER_HOME=<temp>/home "$app"
 ```
+
+Start the stream before launching: debug lines aren't stored, so `log show` afterwards finds
+none. Write `/usr/bin/log`, since zsh's `log` is a builtin.
 
 - **B1:** each show logs a debug line, `show <n>: <ms> ms`. It measures from the hotkey handler,
   or a second launch, calling show to the commit of the Core Animation transaction that puts
   the panel on screen, key, with the field taking the keys. The pixels reach the display one
   refresh later (8–16 ms). Posting the hotkey from a script needs the Accessibility permission,
-  so a second `open` of the running app drives it; bringing another app forward hides the panel
-  between shows. Report the first show apart from the rest.
+  so a second `open "$app"` of the running app shows the panel. Between shows, bringing another
+  app forward (`osascript -e 'tell application "Finder" to activate'`) takes the keys, which
+  hides it. Report the first show apart from the rest.
 - **B2:** the model part (search, ranking and the calculator) is timed by serialized tests in
   `Tests/SearchTests` with bounds about 5× the budget. The path through the panel is timed with
   a throwaway test that puts text in the field's editor and lays out the rows, on the real index;

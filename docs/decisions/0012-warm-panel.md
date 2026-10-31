@@ -18,7 +18,8 @@ that matters most.
 After the first config state registers the hotkey and starts the index build, the coordinator
 queues `SearchPanelController.prepare()` on the main actor. It orders the panel in at alpha 0
 and out again in the same run-loop turn, drawing it once. The panel is never key and never
-visible. The first show then took 20–31 ms.
+visible. The first show's time since then is in the Measured table in
+[performance.md](../performance.md).
 
 ## Alternatives considered
 
@@ -33,5 +34,9 @@ visible. The first show then took 20–31 ms.
 ## Consequences
 
 Launch does about 15 ms more main-actor work, after the hotkey works and while the index builds
-off the main actor, so B3 and B4 don't change. Idle footprint stayed at 18–19 MB. A tool that
-lists windows could see the transparent panel for that one run-loop turn.
+off the main actor, so B3 and B4 don't change. A tool that lists windows could see the
+transparent panel for that one run-loop turn.
+
+`prepare()` has no automated test. What it does only happens with a window on screen, which
+tests never show: they build the controller with `ordersPanel: false`, and `prepare()` then does
+nothing. A change to it is checked with the B1 timing in performance.md.

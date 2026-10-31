@@ -185,6 +185,7 @@ public final class AppCoordinator {
         guard !wasShown else { return }
         shows += 1
         let count = shows
+        // Replaces any completion block set earlier in this transaction; only this timing sets one.
         CATransaction.setCompletionBlock { [log] in
             let elapsed = (ContinuousClock.now - start) / .milliseconds(1)
             log.debug(

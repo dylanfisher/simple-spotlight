@@ -7,12 +7,13 @@ Requires macOS 15 or later.
 
 ## Use it
 
-Build and launch it with `./scripts/dev`. The app goes in `.build/SimpleSpotlight.app`, with no
-Dock icon or menu bar; the panel is the whole interface.
+Build and launch it with `./scripts/dev`. The app is built at the path `./scripts/bundle` prints,
+with no Dock icon or menu bar; the panel is the whole interface.
 
 The default hotkey is ⌘Space, which Spotlight holds until you free it: System Settings →
-Keyboard → Keyboard Shortcuts → Spotlight → uncheck "Show Spotlight search". Until then, the app
-says so once and shows the panel when launched again.
+Keyboard → Keyboard Shortcuts → Spotlight → uncheck "Show Spotlight search". Until then, an alert
+says so the first time, then a row at the top of the panel does, and launching the app again
+shows the panel.
 
 In the panel, type to search apps, System Settings panes and arithmetic (`2^10`, `15% * 80`,
 `sqrt(2)`). Return opens the selected row or copies a calculator answer. ↑ ↓ (or Ctrl-P Ctrl-N)
