@@ -1,3 +1,5 @@
+import Foundation
+
 /// Builds the items of the search index from the app and System Settings providers.
 public struct IndexBuilder: Sendable {
     /// What one build found, apps first, what it had to leave out, and how long it took.
@@ -26,6 +28,13 @@ public struct IndexBuilder: Sendable {
         self.apps = apps
         self.settingsPanes = settingsPanes
         self.excludedIDs = excludedIDs
+    }
+
+    /// The folders whose changes can change the build: the app folders and the `.prefPane`
+    /// folders. System Settings' own panes are on the read-only system volume, which changes
+    /// only with a macOS update.
+    public var watchedFolders: [URL] {
+        apps.folders + settingsPanes.preferencePaneFolders
     }
 
     /// Runs both providers at once, off the caller's actor, since they read the disk. Throws
