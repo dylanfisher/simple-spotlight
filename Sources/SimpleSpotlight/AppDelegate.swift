@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let detail =
             type(of: error) is NSError.Type
             ? error.localizedDescription : String(describing: error)
-        log.error("\(detail, privacy: .public)")
+        log.error("\(detail, privacy: .private)")
         let alert = NSAlert()
         alert.messageText = "\(appName) couldn't do that"
         alert.informativeText = detail

@@ -81,12 +81,14 @@ public final class AppCoordinator {
         if old?.launchAtLogin != new.launchAtLogin {
             loginItemProblem = loginItem.follow(new.launchAtLogin)
             if let loginItemProblem {
-                log.error("login item: \(loginItemProblem.title, privacy: .public)")
+                log.error(
+                    "login item: \(loginItemProblem.title, privacy: .public): \(loginItemProblem.subtitle ?? "", privacy: .private)"
+                )
             }
         }
         if errors != configErrors {
             for error in errors {
-                log.error("config file: \(error.description, privacy: .public)")
+                log.error("config file: \(error.description, privacy: .private)")
             }
             configErrors = errors
         }
@@ -121,13 +123,13 @@ public final class AppCoordinator {
         }
         do throws(HotKeyConflict) {
             try hotKey.register(chord) { [weak self] in self?.panel.toggle() }
-            log.info("hotkey \(chord.text, privacy: .public) registered")
+            log.info("hotkey \(chord.text, privacy: .private) registered")
         } catch {
             conflict = error
         }
         guard let conflict else { return }
         log.error(
-            "hotkey \(chord.text, privacy: .public): \(String(describing: conflict), privacy: .public)"
+            "hotkey \(chord.text, privacy: .private): \(String(describing: conflict), privacy: .public)"
         )
         conflictNotice.show(chord, conflict: conflict) { [weak self] in self?.handle($0) }
     }
@@ -161,7 +163,7 @@ public final class AppCoordinator {
             "index built: \(build.items.count) items, \(build.problems.count) problems in \(String(describing: build.duration), privacy: .public)"
         )
         for problem in build.problems {
-            log.error("index: \(problem.description, privacy: .public)")
+            log.error("index: \(problem.description, privacy: .private)")
         }
         // An app may have a new icon since the last build.
         icons.forgetAll()
