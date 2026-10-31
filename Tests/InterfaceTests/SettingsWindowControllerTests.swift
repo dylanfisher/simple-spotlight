@@ -131,3 +131,15 @@ private func settings(maxResults: Int) -> Search.Settings {
     settings.maxResults = maxResults
     return settings
 }
+
+@MainActor @Test func theKeysGoBackOnlyWhileNoOtherAppHasThem() throws {
+    let other = try #require(
+        NSWorkspace.shared.runningApplications.first { $0 != .current && !$0.isTerminated })
+    let current = NSRunningApplication.current
+
+    #expect(SettingsWindowController.appToReturnTo(previous: other, frontmost: current) === other)
+    #expect(SettingsWindowController.appToReturnTo(previous: other, frontmost: nil) === other)
+    // Another app, even the one the window came from, already has the keys.
+    #expect(SettingsWindowController.appToReturnTo(previous: other, frontmost: other) == nil)
+    #expect(SettingsWindowController.appToReturnTo(previous: nil, frontmost: current) == nil)
+}

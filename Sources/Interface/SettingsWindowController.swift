@@ -68,8 +68,25 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         isShown = false
         window = nil
         // An agent app with no window left would keep the keys, with nothing to type into.
-        if let previousApp, !previousApp.isTerminated { previousApp.activate() }
+        if let app = Self.appToReturnTo(
+            previous: previousApp, frontmost: NSWorkspace.shared.frontmostApplication)
+        {
+            // Since macOS 14 an app is activated only if the active app yields to it.
+            NSApplication.shared.yieldActivation(to: app)
+            app.activate()
+        }
         previousApp = nil
+    }
+
+    /// The app that had the keys when the window opened, if it still runs and nothing else has
+    /// the keys now: the user may have switched apps with the window open, and closing it
+    /// then mustn't pull them back.
+    static func appToReturnTo(previous: NSRunningApplication?, frontmost: NSRunningApplication?)
+        -> NSRunningApplication?
+    {
+        guard let previous, !previous.isTerminated else { return nil }
+        guard frontmost == nil || frontmost == .current else { return nil }
+        return previous
     }
 
     /// A shortcut half recorded when the user clicks into another app stops, so the hotkey
