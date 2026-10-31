@@ -143,7 +143,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     }
 
     /// Orders the panel in fully transparent and out again in the same run-loop turn, so the
-    /// window server's window and the first drawing of the glass and the field happen now
+    /// window server's window and the first drawing of the backdrop and the field happen now
     /// rather than on the first show, which they slowed from about 6 ms to 37. The panel never
     /// becomes key or visible (docs/decisions/0012-warm-panel.md).
     func prepare() {

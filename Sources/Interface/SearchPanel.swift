@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 /// The floating search window: a borderless panel that takes the keys without activating the
-/// app, over every space and full-screen app, rounded over the system's glass or blur, with the
-/// field on top and the rows under it (docs/decisions/0008-search-panel-window.md).
+/// app, over every space and full-screen app, rounded over the system's blur, with the field on
+/// top and the rows under it (docs/decisions/0008-search-panel-window.md).
 @MainActor
 final class SearchPanel: NSPanel {
     /// Offered each key equivalent before the panel's views; returns whether it took it. The
@@ -150,8 +150,8 @@ final class SearchPanel: NSPanel {
     }
 
     /// The content: the backdrop holding `content`, clipped to the rounded shape, with a
-    /// hairline edge over it. The clip keeps the corners clear: the glass draws a faint fill over
-    /// its whole rectangle while the panel is key, which would show as a square around it.
+    /// hairline edge over it. The clip rounds the window server's shadow, which it shapes from
+    /// the panel's pixels.
     private static func makeContent(holding content: NSView, bounds: NSRect) -> NSView {
         let clip = NSView(frame: bounds)
         clip.wantsLayer = true
@@ -165,21 +165,15 @@ final class SearchPanel: NSPanel {
         return clip
     }
 
-    /// From macOS 26 the system's Liquid Glass, as Spotlight's; before it, the `.popover` blur,
-    /// which follows light and dark appearance. Both leave Reduce Transparency and Increase
-    /// Contrast to the system.
+    /// The `.popover` blur, always active, as the panel only shows with the keys. Its tint is
+    /// set by light or dark appearance alone, and what is behind only shows blurred through it.
+    /// macOS 26's Liquid Glass, which Spotlight uses, turns lighter or darker with what is behind
+    /// it, and no public setting holds it to the appearance. Reduce Transparency and Increase
+    /// Contrast stay the system's.
     private static func makeBackdrop(holding content: NSView, bounds: NSRect) -> NSView {
-        if #available(macOS 26, *) {
-            let glass = NSGlassEffectView(frame: bounds)
-            glass.style = .regular
-            glass.cornerRadius = cornerRadius
-            glass.contentView = content
-            return glass
-        }
         let blur = NSVisualEffectView(frame: bounds)
         blur.material = .popover
         blur.blendingMode = .behindWindow
-        // The panel only shows with the keys; an inactive blur would go flat as it hides.
         blur.state = .active
         content.frame = bounds
         content.autoresizingMask = [.width, .height]
@@ -219,7 +213,7 @@ private final class EdgeView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// White over the glass: stronger in light mode, where the glass is pale, fainter in dark
+    /// White over the blur: stronger in light mode, where the blur is pale, fainter in dark
     /// mode, where it would glare.
     static let color = NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua

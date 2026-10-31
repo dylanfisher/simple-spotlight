@@ -62,3 +62,23 @@ import Testing
     #expect(SearchPanel.rows(fitting: SearchPanel.fieldHeight) == 0)
     #expect(SearchPanel.rows(fitting: 10) == 0)
 }
+
+/// The views under `view`, `view` first.
+@MainActor private func descendants(of view: NSView) -> [NSView] {
+    [view] + view.subviews.flatMap(descendants)
+}
+
+/// Liquid Glass turns lighter or darker with what is behind it; the blur's look follows only
+/// light and dark appearance (docs/decisions/0008-search-panel-window.md).
+@MainActor @Test func theBackdropIsABlurWhoseLookFollowsOnlyTheAppearance() throws {
+    let panel = SearchPanel()
+    panel.install(rows: NSView())
+
+    let views = descendants(of: try #require(panel.contentView))
+    let blur = try #require(views.compactMap { $0 as? NSVisualEffectView }.first)
+    #expect(blur.blendingMode == .behindWindow)
+    #expect(blur.state == .active)
+    if #available(macOS 26, *) {
+        #expect(!views.contains { $0 is NSGlassEffectView })
+    }
+}

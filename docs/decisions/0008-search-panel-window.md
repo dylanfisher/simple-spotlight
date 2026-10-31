@@ -21,11 +21,11 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   it resigns key (a click elsewhere, another app forward), not on app deactivation, since the
   app is rarely active. No open or close animation.
 - **Look.** Searcher's recipe after its fixes: a view clipped to a 16 pt rounded rectangle holding
-  the backdrop and a hairline edge (`EdgeView`). The backdrop is
-  `NSGlassEffectView` from macOS 26 and an `NSVisualEffectView` (`.popover`, behind window,
-  always active) before it; both follow light and dark appearance. The clip keeps the window's
-  shadow rounded: unclipped, the glass draws a faint fill over its whole rectangle while key,
-  which shows as a square around the panel (Searcher 0087, "no window shadow around the glass").
+  the backdrop and a hairline edge (`EdgeView`). The backdrop is an `NSVisualEffectView`
+  (`.popover`, behind window, always active) on every macOS version: its tint is set by light or
+  dark appearance alone, so the panel reads the same color over a white window and a black one,
+  as Spotlight's does. The clip keeps the window's shadow rounded, since the window server shapes
+  it from the panel's pixels (Searcher 0087, "no window shadow around the glass").
 - **Place and size.** On the screen with the mouse, centered across it, its top 22% of the way
   down the screen's frame. The height fits the rows and the top stays put as rows come and go,
   so the field doesn't jump while typing. The rows stop at the bottom of the screen's visible
@@ -83,12 +83,17 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   app's empty one while the panel shows.
 - **`NSWorkspace.icon(forFile:)` on the main actor, drawn as it comes** — rejected: it reads the
   disk the first time each icon draws, which AGENTS.md rules out on the main thread.
-- **A visual effect view on macOS 26 too, as the plan says** — rejected for the system's own
-  glass, which is what Spotlight uses there; the blur stays as the macOS 15 path.
+- **`NSGlassEffectView` on macOS 26**, the system's Liquid Glass — used at first, then dropped
+  after first use: the glass turns lighter over a light window and darker over a dark one, and
+  the user wanted the panel to follow only the appearance. Its public API (`style`,
+  `tintColor`, `cornerRadius`) has no setting for that, and Apple describes tinted glass as
+  still mapping its tone to the brightness behind it. An explicit `appearance` on the glass sets
+  the colors of what it holds, not how it samples what is behind. How Spotlight holds its glass
+  still isn't public.
 
 ## Consequences
 
 The keystroke path is the field's delegate, the calculator, the index and a SwiftUI update; B1
 and B2 are measured by hand at the end of P6, when the hotkey shows the panel. What tests can't
-see: the look, the click on a row (a SwiftUI tap gesture), the panel over a full-screen app, the
+see: the look (the panel over a white and a black window, in light and dark mode), the click on a row (a SwiftUI tap gesture), the panel over a full-screen app, the
 frontmost app keeping its active state while the panel takes typing, and what VoiceOver says.
