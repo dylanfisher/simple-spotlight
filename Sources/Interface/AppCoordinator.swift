@@ -90,7 +90,7 @@ public final class AppCoordinator {
             }
             configErrors = errors
         }
-        panel.settings = new
+        if panel.settings != new { panel.settings = new }
         showProblems()
     }
 
@@ -173,11 +173,16 @@ public final class AppCoordinator {
         showProblems()
     }
 
+    /// Sets the panel's problem rows when they differ from those it has, since each setting
+    /// searches again.
     private func showProblems() {
-        panel.leadingItems = [
+        let rows = [
             ProblemItems.config(configErrors, file: configFile), loginItemProblem,
             ProblemItems.index(indexProblems),
         ].compactMap { $0 }
+        let shown = { (rows: [SearchItem]) in rows.map { [$0.id, $0.title, $0.subtitle ?? ""] } }
+        guard shown(rows) != shown(panel.leadingItems) else { return }
+        panel.leadingItems = rows
     }
 
     private func run(command id: String) {

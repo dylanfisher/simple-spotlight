@@ -648,3 +648,20 @@ extension Fixture {
     try fixture.type("")
     #expect(fixture.announcements.last == "No results")
 }
+
+/// A search while hidden would scan the index on the main actor and announce results no one
+/// sees; showing searches anyway.
+@MainActor @Test func aHiddenPanelDoesntSearchUntilShown() throws {
+    let fixture = Fixture()
+    try fixture.type("saf")
+    fixture.controller.hide()
+    fixture.announcements = []
+
+    fixture.controller.index = SearchIndex(items: [fontBook])
+    fixture.controller.leadingItems = [quitItem]
+    #expect(fixture.announcements.isEmpty)
+
+    fixture.controller.show()
+    #expect(fixture.titles == ["Quit Simple Spotlight"])
+    #expect(fixture.announcements.count == 1)
+}

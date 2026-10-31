@@ -15,9 +15,16 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     public var index: SearchIndex {
         didSet { search(keepingSelection: true) }
     }
-    /// Read for `maxResults` and `calculator`. Setting it searches again, as `index` does.
+    /// Read for `maxResults` and `calculator`. Changing either searches again, as setting
+    /// `index` does; searching happens only while the panel shows.
     public var settings: Search.Settings {
-        didSet { search(keepingSelection: true) }
+        didSet {
+            guard
+                settings.maxResults != oldValue.maxResults
+                    || settings.calculator != oldValue.calculator
+            else { return }
+            search(keepingSelection: true)
+        }
     }
     /// Rows shown above the results whatever the query, such as a config error. They count
     /// toward `maxResults`.
@@ -141,8 +148,10 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// Fills the rows for the query: the leading items, the calculator's row, then the index's
     /// best matches, `maxResults` in all. The first row is selected, or with `keepingSelection`
-    /// the row of the item selected before, if it is still there.
+    /// the row of the item selected before, if it is still there. Does nothing while the panel
+    /// is hidden: showing searches, and a search no one sees would still be announced.
     private func search(keepingSelection: Bool = false) {
+        guard isShown else { return }
         let query = query
         let kept = keepingSelection ? selectedRow?.item.id : nil
         var rows = leadingItems.map { SearchState.Row(item: $0, ranges: []) }

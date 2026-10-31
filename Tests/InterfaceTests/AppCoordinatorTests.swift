@@ -89,6 +89,7 @@ private final class Fixture {
     var systemHotKeys: [SystemHotKey] = []
     var notices: [HotKeyConflictNotice.Content] = []
     var quits = 0
+    var announcements: [String] = []
     private(set) var coordinator: AppCoordinator!
 
     init(problems: [IndexProblem] = []) {
@@ -107,6 +108,7 @@ private final class Fixture {
             loginItem: LoginItem(service: loginItem, appName: "Simple Spotlight"),
             buildIndex: { recorder.build($0) }, quit: { [unowned self] in quits += 1 },
             reportError: { Issue.record($0) }, log: Logger(.disabled), ordersPanel: false)
+        coordinator.panel.announce = { [unowned self] in announcements.append($0) }
     }
 
     var panel: SearchPanelController { coordinator.panel }
@@ -305,4 +307,19 @@ private final class Fixture {
     await fixture.apply(Search.Settings())
 
     #expect(fixture.notices.isEmpty)
+}
+
+/// Each search announces its results; a config save that changes nothing the panel shows
+/// mustn't search again.
+@MainActor @Test func aStateThatChangesNothingShownDoesntSearch() async throws {
+    let fixture = Fixture()
+    var settings = Search.Settings()
+    await fixture.apply(settings, errors: [ConfigError(reason: "couldn't be read")])
+    try fixture.type("saf")
+    fixture.announcements = []
+
+    settings.launchAtLogin = true
+    await fixture.apply(settings, errors: [ConfigError(reason: "couldn't be read")])
+
+    #expect(fixture.announcements.isEmpty)
 }
