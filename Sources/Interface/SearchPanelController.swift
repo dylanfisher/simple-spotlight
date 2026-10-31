@@ -106,6 +106,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private(set) var queuedPrepare: Task<Void, Never>?
     /// How many displays are connected.
     var screenCount: () -> Int = { NSScreen.screens.count }
+    /// The modifier keys held now, which decide whether the gear shows as the panel appears.
+    var modifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
     /// How many panels have been made.
     var panelCount: Int { slots.count }
     /// The open of the config file ⌘, started last, for tests to wait on.
@@ -223,6 +225,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             let fit = rowsThatFit(slots[index])
             if slots[index].rows.rootView.limit != fit { slots[index].rows.rootView.limit = fit }
         }
+        let optionHeld = modifierFlags().contains(.option)
+        for shown in shownPanels { shown.showGear(optionHeld) }
         takeUsage()
         search(keepingSelection: true)
         // The field selects its whole text as it takes the keys, so typing replaces the query.

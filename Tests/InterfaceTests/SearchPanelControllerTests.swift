@@ -629,6 +629,26 @@ extension Fixture {
     #expect(fixture.settingsOpened == 1)
 }
 
+@MainActor @Test func theGearShowsWhenOptionIsAlreadyHeldAsThePanelAppears() {
+    let fixture = Fixture()
+    fixture.controller.hide()
+    fixture.controller.modifierFlags = { [.option, .shift] }
+
+    fixture.controller.show()
+
+    #expect(!fixture.controller.panel.gear.isHidden)
+}
+
+@MainActor @Test func theGearStaysAwayWhenOptionIsntHeldAsThePanelAppears() {
+    let fixture = Fixture()
+    fixture.controller.hide()
+    fixture.controller.modifierFlags = { .shift }
+
+    fixture.controller.show()
+
+    #expect(fixture.controller.panel.gear.isHidden)
+}
+
 @MainActor @Test func hidingTakesTheGearAway() {
     let fixture = Fixture()
     fixture.controller.panel.showGear(true)
