@@ -116,6 +116,23 @@ private func waitForHeldWrites(_ file: StubFile, count: Int) async {
     #expect(await file.writes == 0)
 }
 
+/// The file turned broken while the shortcut was being recorded.
+@MainActor @Test func aChordRecordedIntoABrokenFileIsReportedNotDropped() async {
+    let file = StubFile()
+    let model = model(file)
+    model.receive(state(Search.Settings(), broken: true))
+
+    model.recorder.recorded(KeyChord(.control, .k))
+
+    #expect(model.writeError?.reason.hasPrefix("The change wasn't saved") == true)
+    #expect(model.shownErrors.map(\.description).count == 2)
+    await model.lastWrite?.value
+    #expect(await file.writes == 0)
+
+    model.receive(state(Search.Settings()))
+    #expect(model.writeError == nil)
+}
+
 @MainActor @Test func aWriteThatFailsIsShownAndUndone() async {
     let file = StubFile()
     await file.refuse(ConfigError(reason: "has an error"))

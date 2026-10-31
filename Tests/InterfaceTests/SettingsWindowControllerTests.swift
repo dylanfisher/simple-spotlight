@@ -49,6 +49,20 @@ private func model() -> SettingsModel {
     #expect(model.settings.maxResults == 3)
 }
 
+@MainActor @Test func closingTheWindowStopsARecording() {
+    _ = NSApplication.shared
+    let model = model()
+    let controller = SettingsWindowController(
+        model: model, title: "Simple Spotlight Settings", quit: {}, ordersWindow: false)
+    controller.show()
+    model.recorder.start()
+    #expect(model.recorder.isRecording)
+
+    controller.windowWillClose(Notification(name: NSWindow.willCloseNotification))
+
+    #expect(!model.recorder.isRecording)
+}
+
 @MainActor @Test func closingStopsARecording() {
     _ = NSApplication.shared
     let model = model()

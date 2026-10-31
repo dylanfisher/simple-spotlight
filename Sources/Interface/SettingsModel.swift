@@ -89,6 +89,7 @@ public final class SettingsModel {
 
     /// Takes what the config store read.
     public func receive(_ state: ConfigStore.State) {
+        if isFileBroken, !state.isFileBroken { writeError = nil }
         stored = state.settings
         errors = state.errors
         isFileBroken = state.isFileBroken
@@ -99,10 +100,15 @@ public final class SettingsModel {
         show()
     }
 
-    /// Shows `change` at once and writes it into the file. Does nothing while the file has an
-    /// error.
+    /// Shows `change` at once and writes it into the file. While the file has an error nothing is
+    /// written, and `writeError` says so.
     public func change(_ change: @escaping Change) {
-        guard !isFileBroken else { return }
+        guard !isFileBroken else {
+            // The file broke after the control was used, as while a shortcut was being recorded.
+            writeError = ConfigError(
+                reason: "The change wasn't saved, since the config file has an error.")
+            return
+        }
         nextID += 1
         let id = nextID
         pending.append(Pending(id: id, change: change))
@@ -116,6 +122,11 @@ public final class SettingsModel {
                 failed(id, error)
             }
         }
+    }
+
+    /// The errors the window lists: the file's, and the failed write's when there is one.
+    var shownErrors: [ConfigError] {
+        (isFileBroken ? errors : []) + (writeError.map { [$0] } ?? [])
     }
 
     private func written(_ id: Int) {

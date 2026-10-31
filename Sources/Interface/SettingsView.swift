@@ -42,7 +42,7 @@ struct SettingsView: View {
                 )
                 .foregroundStyle(.orange)
                 .font(.headline)
-                ForEach(Array(shownErrors.enumerated()), id: \.offset) { _, error in
+                ForEach(Array(model.shownErrors.enumerated()), id: \.offset) { _, error in
                     Text(error.description)
                         .font(.callout)
                         .textSelection(.enabled)
@@ -50,12 +50,6 @@ struct SettingsView: View {
             }
             Button("Open config.json", action: model.openConfigFile)
         }
-    }
-
-    /// The errors to list: the file's while it is broken, else the failed write's.
-    private var shownErrors: [ConfigError] {
-        if model.isFileBroken { return model.errors }
-        return model.writeError.map { [$0] } ?? []
     }
 
     private var general: some View {
