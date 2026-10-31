@@ -7,6 +7,10 @@ public struct AppProvider: Sendable {
     public static let finder = URL(
         filePath: "/System/Library/CoreServices/Finder.app", directoryHint: .isDirectory)
 
+    /// The one app folder that may be missing without it being a problem, as most people don't
+    /// have one.
+    public static let userApplications = "~/Applications"
+
     /// Scanned in order, each to a depth of two, so `/Applications/Utilities/*.app` is found.
     public let folders: [URL]
     /// Picks the localization each app's name is read in, as `Locale.preferredLanguages` does.
@@ -17,8 +21,7 @@ public struct AppProvider: Sendable {
     public let coreServices: URL
     /// Apps indexed after the folders' when they exist.
     public let extraApps: [URL]
-    /// The user's home folder. Its `Applications` folder is the one folder that may be missing
-    /// without it being a problem, as most people don't have one.
+    /// The user's home folder, where `userApplications` is.
     public let home: URL
 
     public init(
@@ -44,7 +47,8 @@ public struct AppProvider: Sendable {
     func items() throws -> (items: [SearchItem], problems: [IndexProblem]) {
         var problems: [IndexProblem] = []
         var urls: [URL] = []
-        let userApplications = home.appending(path: "Applications").standardizedFileURL.path
+        let userApplications = HomePath.folder(Self.userApplications, home: home)
+            .standardizedFileURL.path
         for folder in folders {
             if folder.standardizedFileURL.path == userApplications,
                 !FileManager.default.fileExists(atPath: folder.path)

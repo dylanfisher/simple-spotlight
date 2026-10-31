@@ -173,3 +173,11 @@ private let camelCaseNames: Set<Substring> = ["AirDrop", "AppleCare", "FollowUps
         #expect(!item.title.hasSuffix("Settings"), "\(item.id): \(item.title)")
     }
 }
+
+@Test func looksForPreferencePanesInTheGivenHomeFolder() {
+    let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
+    #expect(
+        SettingsPaneProvider.standardPreferencePaneFolders(home: home).map(\.path) == [
+            "/Library/PreferencePanes", "/Users/someone/Library/PreferencePanes",
+        ])
+}

@@ -14,13 +14,14 @@ public struct SettingsPaneProvider: Sendable {
             filePath: "/System/Applications/System Settings.app/Contents/PlugIns",
             directoryHint: .isDirectory),
     ]
-    /// Where third-party `.prefPane` bundles are installed, for everyone and for this user.
-    public static var standardPreferencePaneFolders: [URL] {
-        [
-            URL(filePath: "/Library/PreferencePanes", directoryHint: .isDirectory),
-            FileManager.default.homeDirectoryForCurrentUser.appending(
-                path: "Library/PreferencePanes", directoryHint: .isDirectory),
-        ]
+    /// Where third-party `.prefPane` bundles are installed, for everyone and for the user whose
+    /// home folder is `home`.
+    public static func standardPreferencePaneFolders(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> [URL] {
+        ["/Library/PreferencePanes", "~/Library/PreferencePanes"].map {
+            HomePath.folder($0, home: home)
+        }
     }
 
     /// Names for panes whose bundles hold only an internal name in every language. See
@@ -45,7 +46,7 @@ public struct SettingsPaneProvider: Sendable {
 
     public init(
         extensionFolders: [URL] = systemExtensionFolders,
-        preferencePaneFolders: [URL] = standardPreferencePaneFolders,
+        preferencePaneFolders: [URL] = standardPreferencePaneFolders(),
         languages: [String] = Locale.preferredLanguages
     ) {
         self.extensionFolders = extensionFolders
