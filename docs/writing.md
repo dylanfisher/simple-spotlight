@@ -22,7 +22,8 @@ Applies to code comments, docstrings, READMEs, `docs/`, and commit bodies.
 - **No history in the code.** "Added for the billing fix," "now uses X instead of Y," "as discussed"
   — that belongs in the commit message, where it is dated and attached to the diff.
 - **Words to avoid:** robust, seamless, leverage, ensure that, it's worth noting, load-bearing,
-  crucially, elegantly, simply. Say the specific thing instead.
+  crucially, elegantly, simply, blazing fast, lightning, comprehensive, powerful, delve, under the
+  hood. Say the specific thing — for speed, the measured number.
 - **Spelling:** US English.
 
 ## Commits
@@ -45,25 +46,26 @@ Format: [Conventional Commits](https://www.conventionalcommits.org/).
 | `perf` | Faster or smaller, behavior unchanged |
 | `test` | Tests only |
 | `docs` | Documentation only |
-| `build` / `ci` | Dependencies, build config, CI |
+| `build` | Build config and scripts |
 | `chore` | Anything else that doesn't touch shipped code |
 
 - **Summary:** imperative mood ("add", not "added"), lowercase after the colon, no trailing period,
   72 characters max for the whole title line. It completes the sentence "This commit will…".
-- **Scope:** optional. When used, it's a tier or feature name from [map.md](map.md), not a filename.
+- **Scope:** expected when the change sits in one tier: `base`, `search`, `interface` or `app` —
+  the tiers in [map.md](map.md). Omit it for changes that span tiers or touch only tooling.
 - **Body:** required unless the title says everything. Explain why the change was made, what
   alternatives were rejected, and anything a reviewer should look at closely. Don't list the files
-  changed — the diff does that. Wrap at 72.
+  changed — the diff does that. Wrap at 72. A `perf` commit always states before/after numbers and
+  how they were measured.
 - **Footer:** `BREAKING CHANGE: <what breaks and how to migrate>`, `Refs #123`, `Co-authored-by:`.
+- **Checked locally** by `scripts/commit-msg`, which `./scripts/setup` installs as a git hook.
 - **One logical change per commit.** Formatting, renames, and tier promotions go in their own
   commit, separate from the work that prompted them.
 
 ```
-fix(billing): round invoice totals after tax, not before
+perf(search): rank against a prebuilt folded-name index
 
-Rounding each line item first drifted totals by up to a cent per line
-on large invoices. Round once at the end, matching how the payment
-provider computes the charge.
-
-Refs #214
+Folding each app name on every keystroke took 4 ms for 400 apps; the
+names are folded once when the index is built, and a keystroke now
+takes 0.3 ms (median of 20 runs, release build).
 ```

@@ -1,26 +1,16 @@
 # AGENTS.md
 
-<!-- ══════════════════════════════════════════════════════════════
-     TEMPLATE — NOT YET INITIALIZED
-
-     Agent: if this block is still present, this repo was just cloned
-     from the starter and has not been set up. Do NOT infer the answers
-     by scanning the filesystem — run the interview in docs/scaffold.md
-     (or the /scaffold command) with the user, fill in every {{...}}
-     below, then delete this block.
-     ══════════════════════════════════════════════════════════════ -->
-
 Instructions for AI coding agents working in this repo. Humans: see [README.md](README.md).
 
 **Keep this file under ~50 lines.** Anything longer lives in `docs/` and is linked from here.
 
 ## Stack
 
-- **Language:** {{LANGUAGE + VERSION}}
-- **Package manager:** {{PACKAGE MANAGER}}
-- **Framework:** {{FRAMEWORK, or "none"}}
-- **Test framework:** {{TEST FRAMEWORK}}
-- **Layout:** {{where source lives, where tests live}} — tiers and search recipes: [docs/map.md](docs/map.md)
+- **Language:** Swift 6 (language mode 6, tools 6.2), macOS 15+
+- **Package manager:** SwiftPM only — no `.xcodeproj`, no dependencies
+- **Framework:** AppKit for the panel and app shell; SwiftUI for the views inside it
+- **Test framework:** Swift Testing (`import Testing`, `@Test`)
+- **Layout:** `Sources/<Target>/`, tests in `Tests/<Target>Tests/` — tiers and search recipes: [docs/map.md](docs/map.md)
 
 ## Commands
 
@@ -28,10 +18,11 @@ Instructions for AI coding agents working in this repo. Humans: see [README.md](
 |---|---|
 | Install / bootstrap | `./scripts/setup` |
 | Run locally | `./scripts/dev` |
-| Run tests | `./scripts/test` |
+| Run tests | `./scripts/test` (`--filter <name>` for one) |
+| Fix formatting | `./scripts/format` |
 | **Full gate** | `./scripts/check` |
 
-`./scripts/check` is the gate — see Definition of done.
+`./scripts/check` is the gate — see Definition of done. Never call `swift build` or `swift test` directly; the scripts pass the flags every build shares.
 
 ## Principles
 
@@ -48,17 +39,15 @@ Non-negotiable, regardless of stack. Rationale: [docs/principles.md](docs/princi
 
 ## Boundaries
 
-<!-- Highest-value section. Be specific about what must NOT be touched directly.
-     Delete these examples and replace with real ones. -->
-- {{e.g. Never edit `db/migrations/` by hand — run `<migration command>`.}}
-- {{e.g. Never commit to `main` — branch first.}}
-- {{e.g. `src/generated/` is generated — edit the schema, then regenerate.}}
+- `Package.swift` is the tier map. Never add a dependency that points up a tier; a new target updates `docs/map.md` in the same commit.
+- No file-system I/O on the main thread. Indexing and config reads run off the main actor.
+- The bundle ID is written once, in `Sources/SimpleSpotlight/Info.plist`. Read it from the bundle; never repeat it.
+- Tests never touch the user's real config (`~/.config/simple-spotlight/`) or defaults; inject a temp folder.
 - **Pre-release:** breaking changes are fine. Stored data has one shape — no version fields, migrations, or compatibility shims; data that doesn't match is discarded. Delete this line at the first production release.
-- Never write, print, or `op read` a plaintext secret. `.env.example` holds `op://` references; they resolve via `op run` at runtime.
 
 ## Definition of done
 
-- `./scripts/check` passes clean.
+- `./scripts/check` passes clean, and no budget in [docs/performance.md](docs/performance.md) is missed.
 - New behavior has a test that fails without the change.
 - No new dependencies, no new files outside the agreed layout, no TODOs left behind.
 - If a decision was non-obvious, record it in `docs/decisions/`.

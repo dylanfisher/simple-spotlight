@@ -16,59 +16,53 @@ against a codebase you haven't searched.
 
 | Before adding… | Run |
 |---|---|
-| any named thing | `rg -i '<name>' --type {{RG_TYPE}}` |
-| a primitive | `ls {{PRIMITIVES}}/` |
-| a component | `ls {{COMPONENTS}}/` |
-| a helper / util | `rg 'export (function\|const)' {{LIB}}/` |
-| a config value | `rg '<KEY>' {{CONFIG}}` — config is read in one module only |
-| a type / interface | `rg '(type\|interface\|class) <Name>'` |
+| any named thing | `rg -i '<name>' --type swift` |
+| a building block | `ls Sources/Base/` |
+| a result type, provider or ranking rule | `ls Sources/Search/` |
+| a view, window or controller | `ls Sources/Interface/` |
+| a free function | `rg '^\s*(public )?func ' Sources/Base/` |
+| a preference or config key | `rg '<key>' Sources/Search/Settings.swift` — preferences are read in one type only |
+| a type | `rg '(struct\|class\|enum\|protocol\|actor) <Name>\b'` |
 
 If a search turns up something close but not identical, that's the second occurrence. Use it or
 duplicate it — do not abstract yet (principle 3).
 
 ## Tiers
 
-The default vocabulary below is a recommendation, not a mandate. **Rename these to whatever fits
-the project** — `modules`, `services`, `packages`, `internal` are all fine. What must not change is
-the dependency direction.
-
 | Tier | Path | What belongs here | May import from |
 |---|---|---|---|
-| **primitives** | `{{PRIMITIVES}}` | Smallest reusable units. No project-specific knowledge, no I/O, no config reads. Portable to another project as-is. | nothing in this table |
-| **components** | `{{COMPONENTS}}` | Compositions that know about this project — its domain types, its config, its conventions. | primitives |
-| **features** | `{{FEATURES}}` | Vertical slices a user or caller actually invokes. Routes, commands, endpoints, screens. | components, primitives |
-| **lib** | `{{LIB}}` | Pure cross-cutting helpers. No state. | primitives |
-| **config** | `{{CONFIG}}` | The one module that reads the environment and throws on a missing key. | nothing |
+| **base** | `Sources/Base` | Domain-free building blocks: fuzzy matching, the calculator's expression evaluator. Foundation only; no AppKit. Portable as-is. | nothing |
+| **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator), ranking, and `Settings`, the one type that reads the config file. No AppKit, so it's testable without a window. | base |
+| **interface** | `Sources/Interface` | The search panel, its SwiftUI views, the global hotkey, launching results. | search, base |
+| **app** | `Sources/SimpleSpotlight` | The executable: app delegate and wiring. Kept thin. | everything |
 
-**Dependency direction is one-way: features → components → primitives.** Never upward, never
-sideways between features. If a primitive needs something from a component, it isn't a primitive.
+**Dependency direction is one-way: app → interface → search → base.** Never upward.
 
-Enforce this with a tool rather than in prose — `eslint-plugin-import`'s `no-restricted-paths`,
-`dependency-cruiser`, `import-linter` (Python), or `go-arch-lint`. Wire it into `./scripts/check`
-and this paragraph becomes the only place it's written down.
-
-If the stack has no such plugin, write `scripts/arch`: hold the tier table above as a map of tier →
-tiers it may import from, walk the source files under each tier, parse their import statements, and
-fail on any edge the map forbids. That is about forty lines in any language, and worth them — an
-unenforced dependency rule is one that has already been broken somewhere nobody has looked.
+Each tier is a SwiftPM target, so `Package.swift` is the dependency map. The build rejects an
+import of any target that isn't a declared dependency, and because the tiers form a chain, an
+upward dependency is a cycle, which SwiftPM refuses. `scripts/arch` covers the rule the compiler
+can't see: no AppKit, SwiftUI, Cocoa or Carbon import in Base or Search. Each rule has a file in
+`scripts/arch-fixtures/` that breaks it, and the script fails if a rule stops catching its
+fixture. A new rule gets a fixture in the same change.
 
 ## Naming
 
 - One thing per file; the filename is the thing's name.
-- Directory names plural, file names singular: `{{PRIMITIVES}}/button`, not `.../buttons`.
-- Tests sit beside what they test, or mirror the tree — pick one, never both.
-- {{Any project-specific convention: prefixes, suffixes, casing the formatter can't enforce}}
+- File names singular, after the type they hold: `AppProvider.swift`, not `Providers.swift`.
+- Tests mirror the tree: `Sources/Search/AppProvider.swift` →
+  `Tests/SearchTests/AppProviderTests.swift`.
+- AppKit subclasses keep their AppKit suffix: `…Panel`, `…WindowController`, `…View`.
 
 ## Promotion
 
 Things move up a tier deliberately, never by accident:
 
 - **Third occurrence** → extract to the lowest tier that all three callers can reach (principle 3).
-- **Component loses its project knowledge** → it's a primitive now; move it down.
-- **Primitive grows a config read or a domain type** → it was never a primitive; move it up.
+- **Search type loses its project knowledge** → it belongs in Base; move it down.
+- **Base type grows a domain type or a `Settings` read** → it belongs in Search; move it up.
 
 A promotion is its own commit, separate from whatever work revealed it (principle 4).
 
-<!-- paths: {{PRIMITIVES}} {{COMPONENTS}} {{FEATURES}} {{LIB}} {{CONFIG}} -->
+<!-- paths: Sources/Base Sources/Search Sources/Interface Sources/SimpleSpotlight -->
 <!-- ↑ scripts/check verifies every path above exists. Keep it in sync with the Tiers table;
      a rename that misses this line fails the gate, which is the point. -->

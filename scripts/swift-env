@@ -1,0 +1,44 @@
+# shellcheck shell=bash
+# Sourced by the scripts that build or test; not run directly.
+#
+# swift_cmd <subcommand> [args...] runs `swift` with one set of flags for every build and test,
+# so check's steps, the bundle and the tests share one build instead of each rebuilding what the
+# previous one built with different settings.
+#
+# It uses the native build system: with Command Line Tools the default one (swiftbuild) picks
+# one of two toolchain IDs at random and rebuilds every module on about half of all runs.
+# Reason: docs/decisions/0001-swift-appkit-swiftpm.md.
+
+swift_bin="$(xcrun --find swift)"
+# The linker records the SDK's version in the app only when SDKROOT names the SDK. Without it
+# the app reads as built with its deployment target's SDK, and AppKit draws it that way.
+SDKROOT="$(xcrun --show-sdk-path)"
+export SDKROOT
+# The native build system adds the Testing framework only to test targets. Xcode keeps it in
+# the platform; Command Line Tools have no platform.
+if platform="$(xcrun --show-sdk-platform-path 2>/dev/null)"; then
+  testing_frameworks="$platform/Developer/Library/Frameworks"
+else
+  testing_frameworks="$(xcode-select -p)/Library/Developer/Frameworks"
+fi
+if [ ! -d "$testing_frameworks/Testing.framework" ]; then
+  echo "Testing.framework is not in $testing_frameworks" >&2
+  exit 1
+fi
+swift_flags=(--build-system native
+  -Xswiftc -F -Xswiftc "$testing_frameworks"
+  -Xlinker -F -Xlinker "$testing_frameworks" -Xlinker -rpath -Xlinker "$testing_frameworks")
+# Command Line Tools ship the Swift Testing macro plugin in a subdirectory a cold build misses
+# ("plugin for module 'TestingMacros' not found"). Point at it when it exists.
+testing_plugins="$(dirname "$swift_bin")/../lib/swift/host/plugins/testing"
+if [ -d "$testing_plugins" ]; then
+  swift_flags+=(-Xswiftc -plugin-path -Xswiftc "$testing_plugins")
+fi
+
+# SwiftPM warns that the native build system is deprecated on every call; the decision above
+# covers it, so that one line is dropped.
+swift_cmd() {
+  local sub="$1"; shift
+  "$swift_bin" "$sub" "${swift_flags[@]}" "$@" \
+    2> >(grep -vF "'--build-system native' has been deprecated" >&2)
+}

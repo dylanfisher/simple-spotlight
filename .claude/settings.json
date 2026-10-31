@@ -4,7 +4,10 @@
       "Bash(./scripts/check)",
       "Bash(./scripts/dev:*)",
       "Bash(./scripts/setup)",
-      "Bash(./scripts/test:*)"
+      "Bash(./scripts/test:*)",
+      "Bash(./scripts/format)",
+      "Bash(./scripts/arch)",
+      "Bash(./scripts/bundle:*)"
     ],
     "deny": [
       "Bash(op read:*)",

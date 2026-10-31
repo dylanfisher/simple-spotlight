@@ -1,12 +1,29 @@
 #!/usr/bin/env bash
-# Run the test suite. Passes through any extra args to the test runner,
-# so `./scripts/test path/to/file` works for a focused run.
+# Run the tests. Extra args go to swift test: `./scripts/test --filter name`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/swift-env
 
-# Replace the two lines below with the real command, e.g.
-#   exec npm test -- "$@"
-#   exec uv run pytest "$@"
-#   exec go test ./... "$@"
-printf '\033[31m✗ no test command configured — run /scaffold (see docs/scaffold.md).\033[0m\n' >&2
-exit 1
+# A test that lets a stop of the main run loop reach the outermost loop ends the process with
+# exit 0 and no summary, so the exit status alone reads as a pass. Only Swift Testing's closing
+# "Test run with N tests ... after ..." line counts.
+verify_run() {
+  perl -CSD -Mutf8 -e '
+    my ($summary, $last);
+    while (<>) {
+      $summary = 1 if /^\S Test run with \d+ tests?\b.* (?:passed|failed) after /;
+      $last = $1 if /^◇ Test (?!run started|case )(.*) started\.$/;
+    }
+    exit 0 if $summary;
+    print STDERR "tests: the run exited 0 without the \"Test run with N tests\" summary line.\n";
+    print STDERR "  last test started: $last\n" if defined $last;
+    exit 1;
+  ' "$1"
+}
+
+log="$(mktemp)"
+trap 'rm -f "$log"' EXIT
+status=0
+swift_cmd test "$@" | tee "$log" || status=$?
+[ "$status" -ne 0 ] || verify_run "$log" || status=1
+exit "$status"
