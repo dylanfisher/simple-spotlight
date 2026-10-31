@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import Search
@@ -454,4 +455,101 @@ private func isLink(_ url: URL) throws -> Bool {
     #expect(try contents(of: target) == #"{"maxResults": 6}"#)
     #expect(
         try FileManager.default.contentsOfDirectory(atPath: elsewhere.url.path) == ["mine.json"])
+}
+
+/// A file an editor has truncated and not yet written is waited for, not replaced by the
+/// defaults.
+@Test func aChangeWaitsOutAnEmptyFileAnEditorIsSaving() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write(maxResults: 4, to: file)
+    let saved = "{\n  // Mine.\n  \"calculator\": false\n}\n"
+    let store = ConfigStore(folder: root.url, watch: noWatch) { _ in
+        try write(saved, to: file)
+    }
+    await store.start()
+    try write("", to: file)
+
+    try await store.update { $0.maxResults = 12 }
+
+    let text = try contents(of: file)
+    #expect(text.hasPrefix("{\n  // Mine.\n  \"calculator\": false,\n"))
+    #expect(text.contains("\"maxResults\": 12"))
+}
+
+@Test func aChangeToAnEmptyFileThatStaysEmptyWritesTheDefaultFileWithIt() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write(maxResults: 4, to: file)
+    let (store, _) = await started(in: root)
+    try write("", to: file)
+
+    try await store.update { $0.maxResults = 3 }
+
+    #expect(
+        try contents(of: file)
+            == ConfigFile.defaultText.replacingOccurrences(
+                of: "\"maxResults\": 8", with: "\"maxResults\": 3"))
+}
+
+/// The change closure runs after the read and before the write, so a closure that saves the file
+/// is an editor saving between them.
+@Test func aChangeIsMadeAgainWhenTheFileChangesBeforeTheRename() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write("{\"maxResults\": 4}", to: file)
+    let (store, _) = await started(in: root)
+    let calls = Mutex(0)
+
+    try await store.update { settings in
+        if calls.withLock({
+            $0 += 1
+            return $0
+        }) == 1 {
+            try? write("{\"maxResults\": 5, \"calculator\": false}", to: file)
+        }
+        settings.maxResults = 12
+    }
+
+    #expect(calls.withLock { $0 } == 2)
+    #expect(try contents(of: file) == "{\"maxResults\": 12, \"calculator\": false}")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.url.path) == [ConfigFile.name])
+}
+
+@Test func aChangeGivesUpWhenTheFileKeepsChanging() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write("{\"maxResults\": 4}", to: file)
+    let (store, _) = await started(in: root)
+    let calls = Mutex(0)
+
+    await #expect(throws: ConfigError.self) {
+        try await store.update { settings in
+            let call = calls.withLock {
+                $0 += 1
+                return $0
+            }
+            try? write("{\"maxResults\": \(1 + call)}", to: file)
+            settings.maxResults = 12
+        }
+    }
+
+    #expect(calls.withLock { $0 } == ConfigStore.attempts)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.url.path) == [ConfigFile.name])
+}
+
+/// A file macOS won't let be replaced fails at the rename, after the new text is written beside
+/// it.
+@Test func aChangeThatCantBeRenamedRemovesItsPartialFile() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write("{\"maxResults\": 4}", to: file)
+    let (store, _) = await started(in: root)
+    #expect(chflags(file.path, UInt32(UF_IMMUTABLE)) == 0)
+    defer { chflags(file.path, 0) }
+
+    await #expect(throws: ConfigError.self) { try await store.update { $0.maxResults = 5 } }
+
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.url.path) == [ConfigFile.name])
+    #expect(try contents(of: file) == "{\"maxResults\": 4}")
 }

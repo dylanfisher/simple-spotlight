@@ -169,13 +169,14 @@ public actor ConfigStore {
     /// Writes what `change` does to the file's settings into the file, keeping its comments,
     /// spacing and key order (`ConfigFile.changing`), and reads it again, so `states` has the
     /// change before this returns. With no file, or an empty one, the default file is the text
-    /// changed. A file with an error, or one that can't be read, is left alone and the error
+    /// changed; an empty file is believed only once a read `confirmDelay` later finds it so,
+    /// as an editor's save in place empties the file before it writes it. A file with an error, or one that can't be read, is left alone and the error
     /// thrown. The text is written through a link at the file's path, as the default file is,
     /// and replaces the file only if it still has the bytes the change was made to; when it
     /// doesn't, as when an editor saved meanwhile, the change is made again to the new bytes.
-    public func update(_ change: @Sendable (inout Settings) -> Void) throws(ConfigError) {
+    public func update(_ change: @Sendable (inout Settings) -> Void) async throws(ConfigError) {
         for _ in 0..<Self.attempts {
-            let found = read()
+            let found = await settled(read())
             let text: Data
             switch found {
             case .failed(let error): throw error
