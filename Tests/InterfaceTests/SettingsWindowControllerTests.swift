@@ -26,6 +26,29 @@ private func model() -> SettingsModel {
     #expect(!controller.isShown)
 }
 
+/// The window and its form are built when shown and let go when closed; the model keeps what
+/// they show.
+@MainActor @Test func closingReleasesTheWindowAndShowingBuildsAnother() {
+    _ = NSApplication.shared
+    let model = model()
+    let controller = SettingsWindowController(
+        model: model, title: "Simple Spotlight Settings", quit: {}, ordersWindow: false)
+    model.receive(
+        ConfigStore.State(
+            settings: settings(maxResults: 3), errors: [], isFileBroken: false))
+    controller.show()
+    let first = controller.window
+    #expect(first != nil)
+
+    controller.windowWillClose(Notification(name: NSWindow.willCloseNotification))
+    #expect(controller.window == nil)
+
+    controller.show()
+    #expect(controller.window != nil)
+    #expect(controller.window !== first)
+    #expect(model.settings.maxResults == 3)
+}
+
 @MainActor @Test func closingStopsARecording() {
     _ = NSApplication.shared
     let model = model()
@@ -101,4 +124,10 @@ private final class KeyWindow: NSObject, NSWindowDelegate {
     #expect(keys.closes == 1)
     #expect(try keys.command("й", keyCode: 12))
     #expect(keys.quits == 1)
+}
+
+private func settings(maxResults: Int) -> Search.Settings {
+    var settings = Search.Settings()
+    settings.maxResults = maxResults
+    return settings
 }

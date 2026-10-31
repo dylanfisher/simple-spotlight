@@ -13,7 +13,8 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let title: String
     private let ordersWindow: Bool
     private let quit: @MainActor () -> Void
-    private var window: SettingsWindow?
+    /// Built when the window is shown and let go when it closes.
+    private(set) var window: SettingsWindow?
     /// The app that had the keys when the window opened, which gets them back when it closes.
     private var previousApp: NSRunningApplication?
 
@@ -35,8 +36,8 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     /// Brings the window forward, making it the first time.
     public func show() {
         isShown = true
-        guard ordersWindow else { return }
         let window = self.window ?? makeWindow()
+        guard ordersWindow else { return }
         if !NSApplication.shared.isActive {
             let frontmost = NSWorkspace.shared.frontmostApplication
             previousApp = frontmost == .current ? nil : frontmost
@@ -65,6 +66,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         // window is still counted open to say it.
         model.recorder.stop()
         isShown = false
+        window = nil
         // An agent app with no window left would keep the keys, with nothing to type into.
         if let previousApp, !previousApp.isTerminated { previousApp.activate() }
         previousApp = nil
