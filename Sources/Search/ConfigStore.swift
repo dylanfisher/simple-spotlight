@@ -7,9 +7,10 @@ import Foundation
 /// with the file through `states` (docs/decisions/0006-config-file.md).
 ///
 /// It watches the folder rather than the file, since an editor's atomic save replaces the
-/// file. A read that finds the file gone or empty where the last read didn't is believed only
-/// once a second read `confirmDelay` later still finds it so: an editor's save in place
-/// truncates the file before writing it, and a sync tool may delete it and make it again.
+/// file; when the file is a symbolic link, as dotfiles often are, it also watches the folder of
+/// the file the link leads to. A read that finds the file gone or empty is believed only once a
+/// second read `confirmDelay` later still finds it so: an editor's save in place truncates the
+/// file before writing it, and a sync tool may delete it and make it again.
 public actor ConfigStore {
     /// What the app should use, and what to tell the user.
     public struct State: Equatable, Sendable {
@@ -43,7 +44,7 @@ public actor ConfigStore {
 
     /// The folder the config file lives in for the user whose home folder is `home`.
     public static func standardFolder(
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = HomePath.current
     ) -> URL {
         HomePath.folder("~/.config/simple-spotlight", home: home)
     }
@@ -63,11 +64,14 @@ public actor ConfigStore {
     private var readErrors: [ConfigError] = []
     private var createError: ConfigError?
     private var watchError: ConfigError?
+    /// The watch of the folder a link at the file's path leads into, when that is elsewhere.
+    private var targetWatch: (folder: URL, stop: @Sendable () -> Void)?
+    private var targetWatchError: ConfigError?
     private var published: State?
     /// The second read of a file found gone or empty, waiting for `confirmDelay`.
     private var confirming: Task<Void, Never>?
 
-    private enum Read: Equatable {
+    enum Read: Equatable {
         case missing
         case text(Data)
         case failed(ConfigError)
@@ -100,10 +104,10 @@ public actor ConfigStore {
     /// starts watching its folder, and returns the state, which `states` also gets. The file
     /// is read again once the watch has started, so a change between the two isn't missed.
     @discardableResult
-    public func start() -> State {
+    public func start() async -> State {
         precondition(!started, "the config file is already watched")
         started = true
-        var first = read()
+        var first = await settled(read())
         if first.isAbsent {
             do {
                 try writeDefault(over: first)
@@ -118,9 +122,7 @@ public actor ConfigStore {
                 Task { await self?.reload() }
             }
         } catch {
-            watchError = ConfigError(
-                line: nil, key: nil,
-                reason: "isn't watched, so a change applies at the next launch: \(error)")
+            watchError = Self.unwatched(error)
             publish()
         }
         reload()
@@ -134,13 +136,15 @@ public actor ConfigStore {
         confirming = nil
         stopWatch?()
         stopWatch = nil
+        targetWatch?.stop()
+        targetWatch = nil
         feed.finish()
     }
 
     /// Writes the default file where there is none or it is empty, as opening the config file
     /// needs, and returns the file to open. A file made meanwhile, as by an editor, is kept.
-    public func makeDefaultFileIfMissing() throws(ConfigError) -> URL {
-        let found = read()
+    public func makeDefaultFileIfMissing() async throws(ConfigError) -> URL {
+        let found = await settled(read())
         if case .failed(let error) = found { throw error }
         if found.isAbsent {
             try writeDefault(over: found)
@@ -154,6 +158,7 @@ public actor ConfigStore {
     func reload() {
         confirming?.cancel()
         confirming = nil
+        followLink()
         let read = read()
         guard read != lastRead else { return }
         if read.isAbsent, let lastRead, !lastRead.isAbsent {
@@ -161,6 +166,46 @@ public actor ConfigStore {
             return
         }
         accept(read)
+    }
+
+    /// `found`, or when it is an empty file, what a read `confirmDelay` later finds, so a save in
+    /// place that has emptied the file but not yet written it isn't taken for an empty file.
+    private func settled(_ found: Read) async -> Read {
+        guard case .text = found, found.isAbsent else { return found }
+        do {
+            try await sleep(Self.confirmDelay)
+        } catch {
+            return .failed(ConfigError(reason: "wasn't read: \(error)"))
+        }
+        return read()
+    }
+
+    /// Watches the folder of the file a link at the file's path leads to, when that isn't the
+    /// store's own folder, and stops watching one the link no longer leads into.
+    private func followLink() {
+        guard started, stopWatch != nil else { return }
+        let own = Self.realPath(folder) ?? folder
+        let wanted = linkTarget().map { $0.deletingLastPathComponent() }
+            .flatMap { $0.path == own.path ? nil : $0 }
+        guard wanted?.path != targetWatch?.folder.path else { return }
+        targetWatch?.stop()
+        targetWatch = nil
+        targetWatchError = nil
+        if let wanted {
+            do {
+                let stop = try watch(wanted) { [weak self] in
+                    Task { await self?.reload() }
+                }
+                targetWatch = (wanted, stop)
+            } catch {
+                targetWatchError = Self.unwatched(error)
+            }
+        }
+        publish()
+    }
+
+    private static func unwatched(_ error: any Error) -> ConfigError {
+        ConfigError(reason: "isn't watched, so a change applies at the next launch: \(error)")
     }
 
     /// Reads the file again `confirmDelay` from now and takes what it finds then, unless a
@@ -206,49 +251,85 @@ public actor ConfigStore {
     private func publish() {
         let state = State(
             settings: settings,
-            errors: readErrors + [createError, watchError].compactMap { $0 })
+            errors: readErrors + [createError, watchError, targetWatchError].compactMap { $0 })
         guard state != published else { return }
         published = state
         feed.yield(state)
     }
 
-    /// The file's bytes; `missing` when there is none. A link to nothing and a file that can't
-    /// be read are errors with no line, and neither is written over.
-    private func read() -> Read {
-        do {
-            return .text(try Data(contentsOf: file))
-        } catch CocoaError.fileReadNoSuchFile {
-            // Reading follows a link, so a link to nothing reads as no file.
-            if let target = try? FileManager.default.destinationOfSymbolicLink(atPath: file.path) {
+    /// The file's bytes, through a link at its path, up to one byte more than
+    /// `ConfigFile.largestSize` so a file too large is refused without reading it whole;
+    /// `missing` when there is none. A link to nothing and a file that can't be read are errors
+    /// with no line, and neither is written over.
+    func read() -> Read {
+        var info = stat()
+        guard lstat(file.path, &info) == 0 else {
+            let code = errno
+            if code == ENOENT { return .missing }
+            return .failed(
+                ConfigError(reason: "couldn't be read: \(String(cString: strerror(code)))"))
+        }
+        if info.st_mode & S_IFMT == S_IFLNK, linkTarget() == nil {
+            let destination: String
+            do {
+                destination = try FileManager.default.destinationOfSymbolicLink(atPath: file.path)
+            } catch {
                 return .failed(
-                    ConfigError(
-                        line: nil, key: nil,
-                        reason: "is a symbolic link to \(target), which doesn't exist"))
+                    ConfigError(reason: "couldn't be read: \(error.localizedDescription)"))
             }
-            return .missing
-        } catch {
             return .failed(
                 ConfigError(
-                    line: nil, key: nil, reason: "couldn't be read: \(error.localizedDescription)"))
+                    reason: "is a symbolic link to \(destination), which doesn't lead to a file"))
+        }
+        do {
+            let handle = try FileHandle(forReadingFrom: file)
+            let data = try handle.read(upToCount: ConfigFile.largestSize + 1) ?? Data()
+            try handle.close()
+            return .text(data)
+        } catch CocoaError.fileReadNoSuchFile {
+            return .missing
+        } catch {
+            return .failed(ConfigError(reason: "couldn't be read: \(error.localizedDescription)"))
         }
     }
 
+    /// The file a symbolic link at the file's path leads to, through any links after it; nil
+    /// when the path isn't a link, or it leads to nothing.
+    private func linkTarget() -> URL? {
+        var info = stat()
+        guard lstat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFLNK else { return nil }
+        return Self.realPath(file)
+    }
+
+    /// `url` with every symbolic link in it followed; nil when it leads to nothing.
+    private static func realPath(_ url: URL) -> URL? {
+        guard let resolved = realpath(url.path, nil) else { return nil }
+        defer { free(resolved) }
+        return URL(filePath: String(cString: resolved))
+    }
+
     /// Writes `ConfigFile.defaultText` as the file, which `found`, a read just made, says is
-    /// missing or empty. The text goes to a file beside it that is renamed into place. Where
-    /// there was no file, the rename doesn't replace one made since (`RENAME_EXCL`); where it was
+    /// missing or empty. A symbolic link at the file's path stays: the text goes to the file it
+    /// leads to. The text is written beside its destination and renamed into place. Where there
+    /// was no file, the rename doesn't replace one made since (`RENAME_EXCL`); where it was
     /// empty, it replaces it only if it is still empty, which leaves the microseconds between
     /// that check and the rename.
-    private func writeDefault(over found: Read) throws(ConfigError) {
+    func writeDefault(over found: Read) throws(ConfigError) {
         let files = FileManager.default
-        let partial = folder.appending(path: ".\(ConfigFile.name).partial-\(UUID().uuidString)")
+        let link = linkTarget()
+        let destination = link ?? file
+        let partial = destination.deletingLastPathComponent()
+            .appending(path: ".\(destination.lastPathComponent).partial-\(UUID().uuidString)")
         do {
-            try files.createDirectory(at: folder, withIntermediateDirectories: true)
+            if link == nil {
+                try files.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
             try Data(ConfigFile.defaultText.utf8).write(to: partial, options: .withoutOverwriting)
             let renamed: Int32
             if found == .missing {
-                renamed = renamex_np(partial.path, file.path, UInt32(RENAME_EXCL))
-            } else if read().isAbsent {
-                renamed = rename(partial.path, file.path)
+                renamed = renamex_np(partial.path, destination.path, UInt32(RENAME_EXCL))
+            } else if read().isAbsent, linkTarget() == link {
+                renamed = rename(partial.path, destination.path)
             } else {
                 // Written meanwhile, by the user: that file stays.
                 try files.removeItem(at: partial)
@@ -270,7 +351,7 @@ public actor ConfigStore {
                     reason += "; removing \(partial.path) then failed: \(cleanup)"
                 }
             }
-            throw ConfigError(line: nil, key: nil, reason: reason)
+            throw ConfigError(reason: reason)
         }
     }
 }

@@ -15,6 +15,11 @@ private func write(_ text: String, to url: URL) throws {
     try Data(text.utf8).write(to: url)
 }
 
+/// Writes a config file that sets `maxResults` alone.
+private func write(maxResults: Int, to url: URL) throws {
+    try write(#"{"maxResults": \#(maxResults)}"#, to: url)
+}
+
 private func contents(of url: URL) throws -> String {
     String(decoding: try Data(contentsOf: url), as: UTF8.self)
 }
@@ -50,7 +55,7 @@ private func next(
 
 /// A store of a folder in `root`, started, with its first state taken from `states`.
 private func started(
-    in root: TempFolder, sleep: @escaping ConfigStore.Sleep = neverEnds
+    in root: TempFolder, sleep: @escaping ConfigStore.Sleep = endsAtOnce
 ) async -> (store: ConfigStore, first: ConfigStore.State?) {
     let store = ConfigStore(folder: root.url, watch: noWatch, sleep: sleep)
     await store.start()
@@ -98,7 +103,7 @@ private func started(
 @Test func publishesAnEdit() async throws {
     let root = try TempFolder()
     let (store, _) = await started(in: root)
-    try write(#"{"maxResults": 4}"#, to: store.file)
+    try write(maxResults: 4, to: store.file)
     await store.reload()
     #expect(
         await next(from: store) == ConfigStore.State(settings: settings(maxResults: 4), errors: []))
@@ -106,7 +111,7 @@ private func started(
 
 @Test func anEditWithAnErrorKeepsTheLastGoodSettings() async throws {
     let root = try TempFolder()
-    try write(#"{"maxResults": 4}"#, to: root.url.appending(path: ConfigFile.name))
+    try write(maxResults: 4, to: root.url.appending(path: ConfigFile.name))
     let (store, _) = await started(in: root)
     try write(#"{"maxResults": 4, "calculator": 2}"#, to: store.file)
     await store.reload()
@@ -114,7 +119,7 @@ private func started(
     #expect(state?.settings == settings(maxResults: 4))
     #expect(state?.errors.map(\.key) == ["calculator"])
     // Fixing it applies it and clears the error.
-    try write(#"{"maxResults": 5}"#, to: store.file)
+    try write(maxResults: 5, to: store.file)
     await store.reload()
     #expect(
         await next(from: store) == ConfigStore.State(settings: settings(maxResults: 5), errors: []))
@@ -127,20 +132,20 @@ private func started(
     // A save that changes the text but not the settings.
     try write(ConfigFile.defaultText + "\n", to: store.file)
     await store.reload()
-    try write(#"{"maxResults": 6}"#, to: store.file)
+    try write(maxResults: 6, to: store.file)
     await store.reload()
     #expect(await next(from: store)?.settings == settings(maxResults: 6))
 }
 
 @Test func aFileGoneOnlyForAMomentChangesNothing() async throws {
     let root = try TempFolder()
-    try write(#"{"maxResults": 4}"#, to: root.url.appending(path: ConfigFile.name))
+    try write(maxResults: 4, to: root.url.appending(path: ConfigFile.name))
     let (store, _) = await started(in: root, sleep: neverEnds)
     try FileManager.default.removeItem(at: store.file)
     await store.reload()
     try write("", to: store.file)
     await store.reload()
-    try write(#"{"maxResults": 5}"#, to: store.file)
+    try write(maxResults: 5, to: store.file)
     await store.reload()
     #expect(
         await next(from: store) == ConfigStore.State(settings: settings(maxResults: 5), errors: []))
@@ -148,7 +153,7 @@ private func started(
 
 @Test func aFileGoneOnceConfirmedMeansTheDefaults() async throws {
     let root = try TempFolder()
-    try write(#"{"maxResults": 4}"#, to: root.url.appending(path: ConfigFile.name))
+    try write(maxResults: 4, to: root.url.appending(path: ConfigFile.name))
     let (store, _) = await started(in: root, sleep: endsAtOnce)
     try FileManager.default.removeItem(at: store.file)
     await store.reload()
@@ -161,7 +166,7 @@ private func started(
 
 @Test func aFileEmptiedOnceConfirmedIsAnError() async throws {
     let root = try TempFolder()
-    try write(#"{"maxResults": 4}"#, to: root.url.appending(path: ConfigFile.name))
+    try write(maxResults: 4, to: root.url.appending(path: ConfigFile.name))
     let (store, _) = await started(in: root, sleep: endsAtOnce)
     try write("", to: store.file)
     await store.reload()
@@ -187,7 +192,9 @@ private func started(
     let (store, first) = await started(in: root)
     #expect(first?.settings == Settings())
     #expect(
-        first?.errors.map(\.reason) == ["is a symbolic link to \(target.path), which doesn't exist"]
+        first?.errors.map(\.reason) == [
+            "is a symbolic link to \(target.path), which doesn't lead to a file"
+        ]
     )
     #expect(!FileManager.default.fileExists(atPath: target.path))
     await #expect(throws: ConfigError.self) { try await store.makeDefaultFileIfMissing() }
@@ -232,7 +239,133 @@ private func started(
     let store = ConfigStore(folder: root.url)
     await store.start()
     defer { Task { await store.stop() } }
-    try write(#"{"maxResults": 7}"#, to: store.file)
+    try write(maxResults: 7, to: store.file)
     let state = await next(from: store, within: .seconds(10)) { $0.settings.maxResults == 7 }
     #expect(state == ConfigStore.State(settings: settings(maxResults: 7), errors: []))
+}
+
+@Test func anEmptyFileAtLaunchFilledMeanwhileIsKept() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write("", to: file)
+    // The editor's save in place finishes during the wait.
+    let store = ConfigStore(folder: root.url, watch: noWatch) { _ in
+        try write(maxResults: 4, to: file)
+    }
+    let state = await store.start()
+    #expect(state == ConfigStore.State(settings: settings(maxResults: 4), errors: []))
+    #expect(try contents(of: file) == #"{"maxResults": 4}"#)
+}
+
+@Test func anEmptyFileWhenOpenedFilledMeanwhileIsKept() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write(maxResults: 3, to: file)
+    let store = ConfigStore(folder: root.url, watch: noWatch) { _ in
+        try write(maxResults: 4, to: file)
+    }
+    await store.start()
+    try write("", to: file)
+    #expect(try await store.makeDefaultFileIfMissing() == file)
+    #expect(try contents(of: file) == #"{"maxResults": 4}"#)
+}
+
+@Test func aFileMadeJustBeforeTheRenameIsKept() async throws {
+    let root = try TempFolder()
+    let (store, _) = await started(in: root)
+    try write(maxResults: 4, to: store.file)
+    // The read said there was no file; one appeared before the rename.
+    try await store.writeDefault(over: .missing)
+    #expect(try contents(of: store.file) == #"{"maxResults": 4}"#)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.url.path) == [ConfigFile.name])
+}
+
+@Test func stoppingEndsTheStates() async throws {
+    let root = try TempFolder()
+    let store = ConfigStore(folder: root.url, watch: noWatch)
+    await store.start()
+    await store.stop()
+    let states = store.states
+    let ended = Task {
+        var count = 0
+        for await _ in states { count += 1 }
+        return count
+    }
+    // Only the first state was buffered, and the stream ends after it.
+    #expect(await ended.value == 1)
+}
+
+/// Makes `link` a symbolic link to `target`.
+private func link(_ link: URL, to target: URL) throws {
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+}
+
+private func isLink(_ url: URL) throws -> Bool {
+    try FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType
+        == .typeSymbolicLink
+}
+
+@Test func readsThroughALink() async throws {
+    let root = try TempFolder()
+    let elsewhere = try TempFolder()
+    let target = elsewhere.url.appending(path: "mine.json")
+    try write(maxResults: 4, to: target)
+    try link(root.url.appending(path: ConfigFile.name), to: target)
+    let (store, first) = await started(in: root)
+    #expect(first == ConfigStore.State(settings: settings(maxResults: 4), errors: []))
+    #expect(try isLink(store.file))
+}
+
+@Test func writesTheDefaultFileThroughALinkToAnEmptyFile() async throws {
+    let root = try TempFolder()
+    let elsewhere = try TempFolder()
+    let target = elsewhere.url.appending(path: "mine.json")
+    try write("", to: target)
+    try link(root.url.appending(path: ConfigFile.name), to: target)
+    let (store, first) = await started(in: root)
+    #expect(first == ConfigStore.State(settings: Settings(), errors: []))
+    #expect(try isLink(store.file))
+    #expect(try contents(of: target) == ConfigFile.defaultText)
+    // Opening the config file once the target is emptied again does the same.
+    try write("", to: target)
+    #expect(try await store.makeDefaultFileIfMissing() == store.file)
+    #expect(try isLink(store.file))
+    #expect(try contents(of: target) == ConfigFile.defaultText)
+    #expect(
+        try FileManager.default.contentsOfDirectory(atPath: elsewhere.url.path) == ["mine.json"])
+}
+
+/// Real FSEvents, so each wait is a bounded wait on real time.
+@Test func followsALinksTargetAsItChanges() async throws {
+    let root = try TempFolder()
+    let first = try TempFolder()
+    let second = try TempFolder()
+    let firstTarget = first.url.appending(path: "a.json")
+    let secondTarget = second.url.appending(path: "b.json")
+    try write(maxResults: 3, to: firstTarget)
+    try write(maxResults: 4, to: secondTarget)
+    try link(root.url.appending(path: ConfigFile.name), to: firstTarget)
+    let store = ConfigStore(folder: root.url)
+    await store.start()
+    defer { Task { await store.stop() } }
+    try write(maxResults: 5, to: firstTarget)
+    #expect(await next(from: store) { $0.settings.maxResults == 5 } != nil)
+    // Pointing the link elsewhere is a change in the store's folder; the new target's folder is
+    // then watched.
+    try FileManager.default.removeItem(at: store.file)
+    try link(store.file, to: secondTarget)
+    #expect(await next(from: store) { $0.settings.maxResults == 4 } != nil)
+    try write(maxResults: 6, to: secondTarget)
+    #expect(await next(from: store) { $0.settings.maxResults == 6 } != nil)
+}
+
+/// Real FSEvents: an editor's atomic save replaces the file by a rename.
+@Test func appliesAnAtomicSave() async throws {
+    let root = try TempFolder()
+    let store = ConfigStore(folder: root.url)
+    await store.start()
+    defer { Task { await store.stop() } }
+    try Data(#"{"maxResults": 9}"#.utf8).write(to: store.file, options: .atomic)
+    let state = await next(from: store) { $0.settings.maxResults == 9 }
+    #expect(state == ConfigStore.State(settings: settings(maxResults: 9), errors: []))
 }
