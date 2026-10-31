@@ -127,14 +127,23 @@ private func titles(_ query: String, _ names: [String], picked: [String: [String
             == ["Google Chrome", "Chess"])
 }
 
-/// A pick counts for a query that extends it, and for one it extends.
-@Test func aPickCountsForLongerAndShorterQueries() {
+/// A pick counts for the queries it starts with: the user typed that much on the way to it.
+@Test func aPickCountsForShorterQueriesOnly() {
     let names = ["Chess", "Google Chrome"]
-    #expect(titles("ch", names, picked: ["Google Chrome": ["c"]]) == ["Google Chrome", "Chess"])
     #expect(titles("c", names, picked: ["Google Chrome": ["chr"]]) == ["Google Chrome", "Chess"])
+    #expect(titles("ch", names, picked: ["Google Chrome": ["chr"]]) == ["Google Chrome", "Chess"])
+    #expect(titles("ch", names, picked: ["Google Chrome": ["c"]]) == ["Chess", "Google Chrome"])
 }
 
-/// "gc" neither starts "chr" nor starts with it, so Google Chrome's initials stay below an
+/// A pick of Activity Monitor for "a" says nothing about "acr", where Acrobat is the exact
+/// prefix.
+@Test func aShortPickDoesntOutrankAnExactPrefixForALongerQuery() {
+    #expect(
+        titles("acr", ["Activity Monitor", "Acrobat"], picked: ["Activity Monitor": ["a"]])
+            == ["Acrobat", "Activity Monitor"])
+}
+
+/// "chr" doesn't start with "gc", so Google Chrome's initials stay below an
 /// exact prefix.
 @Test func aPickForAnUnrelatedQueryDoesntCount() {
     #expect(

@@ -24,15 +24,15 @@ public struct SearchIndex: Sendable {
     /// they count.
     public func results(for query: String, limit: Int, usage: UsageBoost = .none) -> [Result] {
         precondition(limit >= 0, "a negative limit \(limit)")
+        let matcherQuery = FuzzyMatch.Query(query)
+        guard limit > 0, !matcherQuery.isEmpty else { return [] }
         let learned = usage.learned(for: query)
-        let query = FuzzyMatch.Query(query)
-        guard limit > 0, !query.isEmpty else { return [] }
         // Kept sorted best first. A binary insertion into at most `limit` entries is cheaper than
         // sorting every match when a short query matches most items.
         var top: [Ranked] = []
         top.reserveCapacity(limit + 1)
         for (index, item) in items.enumerated() {
-            guard let (score, byTitle) = Self.score(query, item) else { continue }
+            guard let (score, byTitle) = Self.score(matcherQuery, item) else { continue }
             let ranked = Ranked(
                 score: score, byTitle: byTitle,
                 learned: learned.isEmpty ? 0 : learned[item.id, default: 0],
@@ -50,7 +50,7 @@ public struct SearchIndex: Sendable {
         return top.map { ranked in
             let item = items[ranked.index]
             guard ranked.byTitle else { return Result(item: item, score: ranked.score, ranges: []) }
-            guard let match = query.match(item.foldedTitle) else {
+            guard let match = matcherQuery.match(item.foldedTitle) else {
                 preconditionFailure("\(item.title) scored but didn't match")
             }
             return Result(item: item, score: ranked.score, ranges: match.ranges)
@@ -89,8 +89,8 @@ public struct SearchIndex: Sendable {
     /// Whether `a` ranks before `b`.
     ///
     /// An item is learned for the query when it was opened from a query that starts with this
-    /// one or that this one starts with, so a single pick of Chrome for "c" puts it first for
-    /// "c" and "ch" again. An item is lifted when its frecency reaches
+    /// one, so a single pick of Chrome for "chr" puts it first for "c" and "ch" again, and a
+    /// pick for "c" only for "c". An item is lifted when its frecency reaches
     /// `UsageBoost.liftingFrecency`. Its level is its kind of match, one higher when lifted, so a
     /// lifted subsequence has the level of initials and a lifted exact prefix a level of its own
     /// above every other. In order:

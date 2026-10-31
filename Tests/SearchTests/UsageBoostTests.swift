@@ -31,7 +31,7 @@ private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     #expect(UsageBoost.decayed(2, over: -UsageBoost.halfLife) == 2)
 }
 
-@Test func learnedSumsThePicksForQueriesLikeTheQuery() {
+@Test func learnedSumsThePicksForQueriesThatStartWithTheQuery() {
     var usage = UsageStore.Usage()
     usage.record("chrome", query: "c", at: now.addingTimeInterval(-UsageBoost.halfLife))
     usage.record("chrome", query: "chr", at: now)
@@ -39,8 +39,10 @@ private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     usage.record("chess", query: "che", at: now)
     let boost = UsageBoost(usage, at: now)
 
-    #expect(boost.learned(for: "ch") == ["chrome": 1.5, "chess": 1])
-    #expect(boost.learned(for: "chr") == ["chrome": 1.5])
+    #expect(boost.learned(for: "c") == ["chrome": 1.5, "chess": 1])
+    #expect(boost.learned(for: "ch") == ["chrome": 1, "chess": 1])
+    #expect(boost.learned(for: "chr") == ["chrome": 1])
+    #expect(boost.learned(for: "chro").isEmpty)
     #expect(boost.learned(for: "x").isEmpty)
     #expect(boost.learned(for: " ").isEmpty)
 }

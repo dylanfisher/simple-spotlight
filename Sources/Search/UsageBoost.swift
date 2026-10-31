@@ -39,14 +39,14 @@ public struct UsageBoost: Sendable {
     }
 
     /// Per item id, the frecency of the item's picks for `query`: its opens from a query that
-    /// starts with `query`'s key or that `query`'s key starts with. Items never picked for such
-    /// a query are absent. Worked out once per keystroke, so each item's rank has one key.
+    /// starts with `query`'s key: the user typed at least this much on the way to the pick.
+    /// Items never picked for such a query are absent. Worked out once per keystroke, so each item's rank has one key.
     public func learned(for query: String) -> [String: Double] {
         guard !picks.isEmpty else { return [:] }
         let key = Array(UsageStore.Usage.queryKey(query).utf8)
         guard !key.isEmpty else { return [:] }
         var learned: [String: Double] = [:]
-        for pick in picks where pick.query.starts(with: key) || key.starts(with: pick.query) {
+        for pick in picks where pick.query.starts(with: key) {
             learned[pick.id, default: 0] += pick.frecency
         }
         return learned
