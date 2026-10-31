@@ -21,7 +21,7 @@ against a codebase you haven't searched.
 | a result type, provider or ranking rule | `ls Sources/Search/` |
 | a view, window or controller | `ls Sources/Interface/` |
 | a free function | `rg '^\s*(public )?func ' Sources/Base/` |
-| a preference or config key | `rg '<key>' Sources/Search/Settings.swift` — preferences are read in one type only |
+| a preference or config key | `rg '<key>' Sources/Search/Settings.swift` — every key is declared there, in `Settings.Keys` |
 | a type | `rg '(struct\|class\|enum\|protocol\|actor) <Name>\b'` |
 
 If a search turns up something close but not identical, that's the second occurrence. Use it or
@@ -31,8 +31,8 @@ duplicate it — do not abstract yet (principle 3).
 
 | Tier | Path | What belongs here | May import from |
 |---|---|---|---|
-| **base** | `Sources/Base` | Domain-free building blocks: fuzzy matching, the calculator's expression evaluator. Foundation only; no AppKit. Portable as-is. | nothing |
-| **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator), ranking, and `Settings`, the one type that reads the config file. No AppKit, so it's testable without a window. | base |
+| **base** | `Sources/Base` | Domain-free building blocks: text folding and matching, expression evaluation, config text scanning. Foundation only; no AppKit. Portable as-is. | nothing |
+| **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator), ranking, and the config file (`Settings` declares its keys and holds their values; `ConfigFile` parses it; `ConfigStore` reads and watches it). No AppKit, so it's testable without a window. | base |
 | **interface** | `Sources/Interface` | The search panel, its SwiftUI views, the global hotkey, launching results. | search, base |
 | **app** | `Sources/SimpleSpotlight` | The executable: app delegate and wiring. Kept thin. | everything |
 

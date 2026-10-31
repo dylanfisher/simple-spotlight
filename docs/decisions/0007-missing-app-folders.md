@@ -14,8 +14,8 @@ messages for one folder, and a config error makes the whole file set nothing.
 ## Decision
 
 The index owns it. `ConfigFile` checks only that each entry is a full path or starts with `~/`;
-it never looks at the disk. `AppProvider` reports a missing folder as an `IndexProblem` with its
-path ("…: It doesn't exist.") at every build, and skips a missing `~/Applications`
+it never looks at the disk. `AppProvider` reports a missing folder as an `IndexProblem` naming
+its path at every build, and skips a missing `~/Applications`
 (`AppProvider.userApplications`) silently. P6 shows the build's problems in the panel's error
 row beside the config errors.
 
