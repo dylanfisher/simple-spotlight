@@ -5,10 +5,9 @@ import Foundation
 /// by it, as `SearchIndex.precedes` describes. Built when the panel shows, so a keystroke only
 /// looks frecencies up.
 public struct UsageBoost: Sendable {
-    /// Two weeks: an app opened daily last month ranks below one opened daily this week.
+    /// An app opened daily last month ranks below one opened daily this week.
     public static let halfLife: TimeInterval = 14 * 24 * 60 * 60
-    /// The frecency at which an item ranks with the matches one kind better: three opens today,
-    /// or about one every other day for the last two weeks.
+    /// The frecency at which an item ranks with the matches one kind better.
     public static let liftingFrecency = 3.0
     /// No item has been opened.
     public static let none = UsageBoost(frecencies: [:])

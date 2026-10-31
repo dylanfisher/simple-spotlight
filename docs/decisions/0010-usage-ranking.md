@@ -13,27 +13,27 @@ rule such as "a used item beats a better kind when it was used much more" isn't 
 
 ## Decision
 
-- **Frecency.** Each open counts 1 and halves every 14 days. The file stores, per item id, the
-  count as of the last open with older opens already decayed, and the last-opened date, so the
-  frecency at any time is `count × 2^(−age / half-life)`, the exact sum over every open, from two
-  numbers. `UsageBoost` holds the frecencies, worked out when the panel shows; a keystroke looks
-  them up and never touches the actor or the disk.
-- **Lift as a level.** An item whose frecency reaches 3 (`UsageBoost.liftingFrecency`) is
-  lifted: its level is its kind plus one. Items order by level, then lifted before unlifted, then
-  subsequence quality, then frecency, then the older tie rules. `SearchIndex.precedes` states the
-  order. A lifted item passes the unlifted matches one kind better and never a kind two better;
-  only matches are ranked, so usage can't make a non-match appear.
-- **What counts as an open.** Return, a click or ⌘1…⌘9 on an app or System Settings pane, when the
-  open is asked of the workspace. Calculator answers, problem rows and the built-in commands
+- **Frecency.** Each open counts 1 and halves every `UsageBoost.halfLife`, chosen at two weeks.
+  The file stores, per item id, the count as of the last open with older opens already decayed,
+  and the last-opened date: two numbers that give the exact sum over every open. `UsageBoost`
+  works the frecencies out when the panel shows; a keystroke looks them up and never touches the
+  actor or the disk.
+- **Lift as a level.** An item whose frecency reaches `UsageBoost.liftingFrecency` (3 at the
+  time: a few opens in a day) is lifted, and its level is its kind plus one. Ranking by level
+  turns "lift by one kind at most" into a key each item has on its own, which keeps the
+  comparator a strict weak order; `SearchIndex.precedes` gives the full order. A lifted item
+  passes the unlifted matches one kind better and never a kind two better, and only matches are
+  ranked, so usage can't make a non-match appear.
+- **What counts as an open.** An app or System Settings pane opened from the panel, at the time
+  the open is asked of the workspace. Calculator answers, problem rows and the built-in commands
   aren't recorded: a used "Quit Simple Spotlight" would rise above "QuickTime Player" for "q".
-  ⌘Return (reveal in Finder) isn't an open of the item. A launch that fails afterwards still
-  counts; the workspace reports that later, and it is rare.
-- **Pruning by decay.** Loading drops entries whose frecency is below 1/64: one open twelve weeks
-  ago. That bounds the file to what was opened lately, including ids of deleted apps, without the
-  store knowing the index.
-- **Writes.** `UsageStore` is an actor; an open is written one second later with any opens in
-  between, and the app writes what is left before it quits. Dates are ISO 8601 so the file reads
-  plainly.
+  Revealing in Finder isn't an open of the item. A launch that fails afterwards still counts;
+  the workspace reports that later, and it is rare.
+- **Pruning by decay.** Loading drops entries whose frecency is below `UsageStore.forgetBelow`,
+  chosen as one open six half-lives ago. That bounds the file to what was opened lately,
+  including ids of deleted apps, without the store knowing the index.
+- **Writes.** `UsageStore` is an actor that writes a burst of opens once, after
+  `UsageStore.writeDelay`, and the app writes what is left before it quits.
 
 ## Alternatives considered
 
@@ -52,8 +52,8 @@ rule such as "a used item beats a better kind when it was used much more" isn't 
 
 ## Consequences
 
-Three opens in a day are enough to move an app above an unused better match, and the lift wears
-off after a few weeks without use. The threshold and half-life are constants in `UsageBoost`; if
-the lift feels too eager or too slow, change them there. Per keystroke, usage costs a dictionary
+A few opens in a day move an app above an unused better match, and the lift wears off after a
+few weeks without use. If it feels too eager or too slow, change the constants in `UsageBoost`.
+Per keystroke, usage costs a dictionary
 lookup per matching item: for 2,000 items, a one-letter query that matches all of them went from
 0.15 ms to 0.23 ms (median of 200 runs, release build).

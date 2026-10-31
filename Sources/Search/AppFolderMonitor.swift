@@ -17,10 +17,13 @@ public final class AppFolderMonitor: @unchecked Sendable {
     /// Watches through FSEvents, which also reports a folder created after the watch starts.
     public static let fileEvents: Watch = { folders, onChange in
         let watcher = try FolderWatcher(
-            paths: folders.map(\.path), latency: .milliseconds(250), onChange: onChange)
+            paths: folders.map(\.path), latency: latency, onChange: onChange)
         return { watcher.stop() }
     }
 
+    /// How long FSEvents batches changes before calling back: well under `quiet`, so the batches
+    /// of one burst don't leave gaps that end it.
+    public static let latency: Duration = .milliseconds(250)
     /// The pause that ends a burst: longer than the gaps between the writes of one copy.
     public static let quiet: Duration = .seconds(1)
     /// The longest a burst waits, so changes that never pause still rebuild every so often.
@@ -80,6 +83,8 @@ public final class AppFolderMonitor: @unchecked Sendable {
     ) {
         self.onChange = onChange
         burst = Burst(quiet: quiet, longest: longest)
+        // FSEvents refuses a stream of no paths, as when apps and panes are both turned off.
+        guard !folders.isEmpty else { return }
         let start = Task.detached { [weak self] in
             let stop: @Sendable () -> Void
             do {
@@ -101,7 +106,7 @@ public final class AppFolderMonitor: @unchecked Sendable {
         lock.withLock { starting = start }
     }
 
-    /// The start of the watch, for tests to wait on.
+    /// The start of the watch, for tests to wait on; nil when there was nothing to watch.
     var started: Task<Void, Never>? { lock.withLock { starting } }
 
     /// Stops watching, or the watch from starting. A burst under way is dropped.

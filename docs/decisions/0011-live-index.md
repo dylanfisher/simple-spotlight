@@ -13,20 +13,19 @@ over several seconds, and a folder in `appFolders` may not exist yet.
 
 ## Decision
 
-- **What is watched.** `IndexBuilder.watchedFolders`: the expanded `appFolders` and the two
-  `.prefPane` folders, each only when its setting is on. System Settings' own panes are on the
-  read-only system volume, which changes only with a macOS update, so they aren't watched. The
-  coordinator starts a new watch whenever `indexKeys` change, before the rebuild they cause.
+- **What is watched** is `IndexBuilder.watchedFolders`, so the watch and the build read one list.
+  System Settings' own panes are on the read-only system volume, which changes only with a macOS
+  update, so they aren't watched.
 - **Bursts, not events.** Every change under a watched folder counts, including those inside
-  bundles. `AppFolderMonitor` reports once a second passes without a change, or ten seconds
-  after the first, whichever is first. An update that writes every few milliseconds for five
-  seconds is one rebuild, run once the bundle is complete; changes that never pause rebuild at
-  most every ten seconds.
+  bundles, and `AppFolderMonitor` reports once per burst: after `quiet` without a change, or
+  `longest` after the first, whichever is first. An update writing for several seconds is one
+  rebuild, run once the bundle is complete, and changes that never pause still rebuild now and
+  then.
 - **A folder that doesn't exist yet** is watched like the others. FSEvents matches changes by
   path, so making the folder, or moving it into place, is a change; a test covers it. A missing
   folder stays an index problem (0007) until the rebuild that change causes.
 - **A watch that won't start** is logged, and the index works without updates until the next
-  change of the index's settings or the next launch.
+  change of the index's settings or the next launch. With no folders to watch, no watch starts.
 
 ## Alternatives considered
 
@@ -42,6 +41,7 @@ over several seconds, and a folder in `appFolders` may not exist yet.
 
 ## Consequences
 
-A new app shows in results about a second after its copy finishes. A folder with constant
-writes, such as a home folder listed in `appFolders`, rebuilds every ten seconds, about 1% of a
-core. The quiet time and cap are constants in `AppFolderMonitor`.
+A new app shows in results about a second after its copy finishes. Measured with a release
+bundle: copying a 393-file app into a watched folder, writing 600 files inside it over 5 s, and
+deleting it each caused one rebuild. A folder with constant writes, such as a home folder listed
+in `appFolders`, rebuilds once per `longest`: about 1% of a core when it was ten seconds.

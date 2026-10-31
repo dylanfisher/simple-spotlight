@@ -43,15 +43,15 @@ public actor UsageStore {
 
     /// How long after an open the file is written, so the opens in between are written with it.
     public static let writeDelay: Duration = .seconds(1)
-    /// An entry whose frecency has fallen below this is dropped when the file is loaded: one
-    /// open, six half-lives (twelve weeks) ago. It keeps the file to what was opened lately,
-    /// including ids of apps since deleted, without the store knowing the index.
+    /// An entry whose frecency has fallen below this is dropped when the file is loaded. It keeps
+    /// the file to what was opened lately, including ids of apps since deleted, without the
+    /// store knowing the index.
     public static let forgetBelow = 1.0 / 64
 
     public nonisolated let file: URL
     private let folder: URL
     private let sleep: Sleep
-    private let writeFailed: @Sendable (any Error) -> Void
+    private let reportProblem: @Sendable (any Error) -> Void
     /// The usage as last read or recorded; nil until the first read.
     private var usage: Usage?
     /// Whether `usage` holds an open the file doesn't.
@@ -61,16 +61,17 @@ public actor UsageStore {
     /// The writes made, for tests.
     private(set) var writes = 0
 
-    /// A store of `usage.json` in `folder`, which is made when first written. `writeFailed` is
-    /// told when a delayed write fails, since no caller is waiting for it.
+    /// A store of `usage.json` in `folder`, which is made when first written. `reportProblem` is
+    /// told when a delayed write fails, since no caller is waiting for it, and when a file that
+    /// doesn't decode is discarded.
     public init(
         folder: URL, sleep: @escaping Sleep = { try await Task.sleep(for: $0) },
-        writeFailed: @escaping @Sendable (any Error) -> Void
+        reportProblem: @escaping @Sendable (any Error) -> Void
     ) {
         self.folder = folder
         file = folder.appending(path: "usage.json")
         self.sleep = sleep
-        self.writeFailed = writeFailed
+        self.reportProblem = reportProblem
     }
 
     /// The usage on file, less the entries forgotten by `now`.
@@ -100,7 +101,7 @@ public actor UsageStore {
                 do {
                     try write()
                 } catch {
-                    writeFailed(error)
+                    reportProblem(error)
                 }
             }
         }
@@ -139,8 +140,21 @@ public actor UsageStore {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         // The pre-release rule: data of another shape is dropped and replaced at the next write.
-        let read = (try? decoder.decode(Usage.self, from: data)) ?? Usage()
+        let read: Usage
+        do {
+            read = try decoder.decode(Usage.self, from: data)
+        } catch {
+            reportProblem(Discarded(reason: error))
+            read = Usage()
+        }
         usage = read
         return read
+    }
+
+    /// The file didn't decode, so its usage was dropped.
+    struct Discarded: Error, CustomStringConvertible {
+        let reason: any Error
+
+        var description: String { "discarded a file that didn't decode: \(reason)" }
     }
 }

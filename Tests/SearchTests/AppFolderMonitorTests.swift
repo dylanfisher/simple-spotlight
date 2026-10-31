@@ -56,22 +56,28 @@ private func reports(
 private final class FakeWatch: @unchecked Sendable {
     private let lock = NSLock()
     private var stops = 0
+    private var starts = 0
     private var callback: (@Sendable () -> Void)?
 
     var watch: AppFolderMonitor.Watch {
         { [self] _, onChange in
-            lock.withLock { callback = onChange }
+            lock.withLock {
+                starts += 1
+                callback = onChange
+            }
             return { [self] in lock.withLock { stops += 1 } }
         }
     }
 
     var stopped: Int { lock.withLock { stops } }
+    var watches: Int { lock.withLock { starts } }
 }
 
 @Test func stopEndsTheWatch() async throws {
     let fake = FakeWatch()
     let monitor = AppFolderMonitor(
-        folders: [], watch: fake.watch, failed: { Issue.record($0) }, onChange: {})
+        folders: [URL(filePath: "/Applications")], watch: fake.watch,
+        failed: { Issue.record($0) }, onChange: {})
     await monitor.started?.value
 
     monitor.stop()
@@ -83,11 +89,24 @@ private final class FakeWatch: @unchecked Sendable {
 @Test func aStopBeforeTheWatchStartsStopsItOnceStarted() async throws {
     let fake = FakeWatch()
     let monitor = AppFolderMonitor(
-        folders: [], watch: fake.watch, failed: { Issue.record($0) }, onChange: {})
+        folders: [URL(filePath: "/Applications")], watch: fake.watch,
+        failed: { Issue.record($0) }, onChange: {})
     monitor.stop()
     await monitor.started?.value
 
     #expect(fake.stopped == 1)
+}
+
+/// FSEvents refuses a stream of no paths; with no folders to watch, there is nothing to start.
+@Test func noFoldersStartNoWatch() async throws {
+    let fake = FakeWatch()
+    let monitor = AppFolderMonitor(
+        folders: [], watch: fake.watch, failed: { Issue.record($0) }, onChange: {})
+    await monitor.started?.value
+    monitor.stop()
+
+    #expect(fake.watches == 0)
+    #expect(fake.stopped == 0)
 }
 
 private struct Refused: Error {}
@@ -95,7 +114,8 @@ private struct Refused: Error {}
 @Test func aWatchThatWontStartIsReported() async throws {
     let failures = Failures()
     let monitor = AppFolderMonitor(
-        folders: [], watch: { _, _ in throw Refused() }, failed: { failures.add($0) },
+        folders: [URL(filePath: "/Applications")], watch: { _, _ in throw Refused() },
+        failed: { failures.add($0) },
         onChange: {})
     await monitor.started?.value
 

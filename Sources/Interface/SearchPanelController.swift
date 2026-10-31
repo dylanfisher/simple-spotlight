@@ -35,6 +35,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// Setting it searches again, as setting `index` does.
     public var usage = UsageStore.Usage() {
         didSet {
+            // Showing works the frecencies out, for the time it shows.
+            guard isShown else { return }
             boost = UsageBoost(usage, at: now())
             search(keepingSelection: true)
         }
