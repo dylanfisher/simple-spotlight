@@ -8,9 +8,9 @@ import os
 /// (docs/decisions/0009-app-wiring.md).
 @MainActor
 public final class AppCoordinator {
-    /// Builds the index the settings ask for, off the main actor. Throws only
-    /// `CancellationError`.
-    public typealias BuildIndex = @Sendable (Search.Settings) async throws -> IndexBuilder.Build
+    /// Builds the index the settings ask for, off the main actor; throws when cancelled.
+    public typealias BuildIndex =
+        @Sendable (Search.Settings) async throws(CancellationError) -> IndexBuilder.Build
 
     public private(set) var panel: SearchPanelController!
     /// The settings last applied; nil before the first.
@@ -146,12 +146,9 @@ public final class AppCoordinator {
         indexBuild?.cancel()
         indexBuild = Task { [buildIndex] in
             let build: IndexBuilder.Build
-            do {
+            do throws(CancellationError) {
                 build = try await buildIndex(settings)
             } catch {
-                guard error is CancellationError else {
-                    preconditionFailure("the index build threw \(error)")
-                }
                 return
             }
             guard !Task.isCancelled else { return }

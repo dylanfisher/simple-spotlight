@@ -63,16 +63,16 @@ public struct SettingsPaneProvider: Sendable {
 
     /// The panes, then the `.prefPane` bundles, each in folder order; a `.prefPane` whose bundle
     /// ID was already found is left out. A folder that can't be listed or a bundle that can't be
-    /// read is left out and reported as a problem. Throws only `CancellationError`.
+    /// read is left out and reported as a problem. Throws when cancelled.
     ///
     /// It blocks on the disk; callers go through `IndexBuilder.build()`, which runs it off the
     /// caller's actor.
-    func items() throws -> (items: [SearchItem], problems: [IndexProblem]) {
+    func items() throws(CancellationError) -> (items: [SearchItem], problems: [IndexProblem]) {
         var problems: [IndexProblem] = []
         var items: [SearchItem] = []
         for folder in extensionFolders {
             for url in Self.bundles(in: folder, withExtension: "appex", problems: &problems) {
-                try Task.checkCancellation()
+                if Task.isCancelled { throw CancellationError() }
                 do {
                     if let item = try pane(at: url) { items.append(item) }
                 } catch {
@@ -84,7 +84,7 @@ public struct SettingsPaneProvider: Sendable {
         for folder in preferencePaneFolders
         where FileManager.default.fileExists(atPath: folder.path) {
             for url in Self.bundles(in: folder, withExtension: "prefPane", problems: &problems) {
-                try Task.checkCancellation()
+                if Task.isCancelled { throw CancellationError() }
                 do {
                     let info = try BundleInfo(bundle: url)
                     let id = info.identifier ?? url.path

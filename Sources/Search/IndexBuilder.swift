@@ -29,13 +29,14 @@ public struct IndexBuilder: Sendable {
     }
 
     /// Runs both providers at once, off the caller's actor, since they read the disk. Throws
-    /// only `CancellationError`, so a stale rebuild can be cancelled.
-    @concurrent public func build() async throws -> Build {
+    /// when cancelled, so a stale rebuild can be.
+    @concurrent public func build() async throws(CancellationError) -> Build {
         let clock = ContinuousClock()
         let start = clock.now
-        async let appScan = apps.items()
-        async let paneScan = settingsPanes.items()
-        let (found, panes) = try await (appScan, paneScan)
+        // `async let` loses a typed error, so each scan's comes back in a `Result`.
+        async let appScan = Result { () throws(CancellationError) in try apps.items() }
+        async let paneScan = Result { () throws(CancellationError) in try settingsPanes.items() }
+        let (found, panes) = try await (appScan.get(), paneScan.get())
         return Build(
             items: (found.items + panes.items).filter { !excludedIDs.contains($0.id) },
             problems: found.problems + panes.problems,

@@ -40,11 +40,11 @@ public struct AppProvider: Sendable {
 
     /// One row per app, in folder order, then the extra apps. When two apps share a bundle ID,
     /// the one found first wins. A folder that can't be listed or an app that can't be read is
-    /// left out and reported as a problem. Throws only `CancellationError`.
+    /// left out and reported as a problem. Throws when cancelled.
     ///
     /// It blocks on the disk; callers go through `IndexBuilder.build()`, which runs it off the
     /// caller's actor.
-    func items() throws -> (items: [SearchItem], problems: [IndexProblem]) {
+    func items() throws(CancellationError) -> (items: [SearchItem], problems: [IndexProblem]) {
         var problems: [IndexProblem] = []
         var urls: [URL] = []
         let userApplications = HomePath.folder(Self.userApplications, home: home)
@@ -61,7 +61,7 @@ public struct AppProvider: Sendable {
         var seen: Set<String> = []
         var items: [SearchItem] = []
         for url in urls {
-            try Task.checkCancellation()
+            if Task.isCancelled { throw CancellationError() }
             do {
                 guard let item = try item(for: url), seen.insert(item.id).inserted else { continue }
                 items.append(item)

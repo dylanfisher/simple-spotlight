@@ -35,7 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotKey: HotKey(), systemHotKeys: { try HotKey.systemHotKeys() },
             conflictNotice: HotKeyConflictNotice(appName: appName),
             loginItem: LoginItem(service: MainAppLoginItem(), appName: appName),
-            buildIndex: { try await $0.indexBuilder().build() },
+            buildIndex: { settings throws(CancellationError) in
+                try await settings.indexBuilder().build()
+            },
             quit: { NSApplication.shared.terminate(nil) }, reportError: reportError, log: log)
         self.coordinator = coordinator
         // Launch doesn't wait for the file: the store reads it off the main actor, and each

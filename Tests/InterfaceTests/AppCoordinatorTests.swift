@@ -111,7 +111,8 @@ private final class Fixture {
                 [unowned self] content, _ in notices.append(content)
             },
             loginItem: LoginItem(service: loginItem, appName: "Simple Spotlight"),
-            buildIndex: { recorder.build($0) }, quit: { [unowned self] in quits += 1 },
+            buildIndex: { settings throws(CancellationError) in recorder.build(settings) },
+            quit: { [unowned self] in quits += 1 },
             reportError: { Issue.record($0) }, log: Logger(.disabled), ordersPanel: false)
         coordinator.panel.announce = { [unowned self] in announcements.append($0) }
     }
