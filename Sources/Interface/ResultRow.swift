@@ -85,6 +85,8 @@ struct ResultRow: View {
             return .symbol("plus.forwardslash.minus")
         case .command:
             return .symbol("gearshape")
+        case .problem:
+            return .symbol("exclamationmark.triangle")
         case .app:
             guard case .openFile(let url) = item.target else {
                 preconditionFailure("the app \(item.id) has no file to open")

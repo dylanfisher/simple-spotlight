@@ -42,6 +42,14 @@ public struct Settings: Sendable, Equatable {
                 extensionFolders: [], preferencePaneFolders: [], languages: languages)
         return IndexBuilder(apps: apps, settingsPanes: panes, excludedIDs: Set(excludedApps))
     }
+
+    /// Whether `other` asks for the index these settings do: the same values for every key
+    /// `indexBuilder(home:languages:)` reads.
+    public func asksForSameIndex(as other: Settings) -> Bool {
+        searchApplications == other.searchApplications
+            && searchSystemSettings == other.searchSystemSettings
+            && appFolders == other.appFolders && excludedApps == other.excludedApps
+    }
 }
 
 extension Settings {

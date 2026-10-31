@@ -7,6 +7,12 @@ public struct IndexBuilder: Sendable {
         /// rest of the index is still built.
         public let problems: [IndexProblem]
         public let duration: Duration
+
+        public init(items: [SearchItem], problems: [IndexProblem], duration: Duration) {
+            self.items = items
+            self.problems = problems
+            self.duration = duration
+        }
     }
 
     public let apps: AppProvider

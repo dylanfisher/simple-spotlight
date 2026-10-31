@@ -67,3 +67,24 @@ import Testing
     let build = try await settings.indexBuilder(home: home.url, languages: ["en"]).build()
     #expect(build.problems.map(\.path) == [home.url.appending(path: "Gone").path])
 }
+
+/// A change the index doesn't read keeps the index; one it reads asks for a new one.
+@Test func asksForTheSameIndexUnlessAnIndexedKeyChanges() {
+    let base = Settings()
+    var other = base
+    other.hotkey = KeyChord(.control, .k)
+    other.calculator = false
+    other.maxResults = 3
+    other.launchAtLogin = true
+    #expect(base.asksForSameIndex(as: other))
+
+    let changes: [(inout Settings) -> Void] = [
+        { $0.searchApplications = false }, { $0.searchSystemSettings = false },
+        { $0.appFolders = ["/Applications"] }, { $0.excludedApps = ["com.apple.Chess"] },
+    ]
+    for change in changes {
+        var changed = base
+        change(&changed)
+        #expect(!base.asksForSameIndex(as: changed))
+    }
+}

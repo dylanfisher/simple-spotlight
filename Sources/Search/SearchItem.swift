@@ -1,11 +1,13 @@
 import Base
 import Foundation
 
-/// One row the panel can show and open: an app, a System Settings pane, a calculator answer or a
-/// built-in command.
+/// One row the panel can show and open: an app, a System Settings pane, a calculator answer, a
+/// built-in command, or a problem to fix.
 public struct SearchItem: Sendable, Identifiable {
     public enum Kind: Sendable, Equatable {
         case app, settingsPane, calculation, command
+        /// Something wrong, such as a config error, shown above the results.
+        case problem
     }
 
     /// What opening the item does.
