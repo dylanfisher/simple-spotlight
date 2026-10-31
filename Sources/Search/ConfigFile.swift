@@ -80,6 +80,40 @@ public enum ConfigFile {
         return .settings(settings)
     }
 
+    /// `data`, a config file's text, with what `change` does to its settings written in: each
+    /// key whose value changes has its value's text replaced, or goes in after the last key with
+    /// its comment when the file leaves it out, and every other byte stays as the user wrote it
+    /// (`ConfigText`). Nil when the file's settings already are what `change` makes them, so
+    /// nothing needs writing. A file with an error isn't changed: the user is fixing it, and
+    /// its settings aren't known.
+    public static func changing(_ data: Data, _ change: (inout Settings) -> Void)
+        throws(ConfigError) -> Data?
+    {
+        guard case .settings(let old) = parse(data) else {
+            throw ConfigError(reason: "has an error, so nothing is saved to it until it's fixed")
+        }
+        var new = old
+        change(&new)
+        guard new != old else { return nil }
+        var bytes = Array(data)
+        for key in Settings.Keys.all where key.differs(old, new) {
+            let root: ConfigText.Object
+            do {
+                root = try ConfigText.scan(bytes)
+            } catch {
+                throw ConfigError(
+                    line: ConfigText.line(at: error.offset, in: bytes),
+                    reason: "couldn't be changed: \(error.reason)")
+            }
+            let value = key.text(in: new)
+            bytes =
+                root.member(key.name).map { ConfigText.replacing($0, with: value, in: bytes) }
+                ?? ConfigText.inserting(
+                    "\(json(key.name)): \(value)", comment: key.comment, into: root, in: bytes)
+        }
+        return Data(bytes)
+    }
+
     /// The file written where there is none: every key at its default, in the order
     /// `Settings.Keys.all` gives them, each with its comment above it, as in Sublime Text's
     /// settings.

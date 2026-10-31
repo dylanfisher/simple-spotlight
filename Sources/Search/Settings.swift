@@ -123,13 +123,17 @@ extension Settings {
         var comment: [String] { get }
         /// The default as JSON text, a nested line indented for a key of the top-level object.
         var defaultText: String { get }
+        /// The key's value in `settings` as JSON text, written as `defaultText` is.
+        func text(in settings: Settings) -> String
+        /// Whether the key has different values in `one` and `other`.
+        func differs(_ one: Settings, _ other: Settings) -> Bool
         /// Sets the key in `settings` to `json`, a value `JSONSerialization` read, or returns
         /// why it can't take it, naming the key.
         func read(_ json: Any, into settings: inout Settings) -> String?
     }
 
     /// One key of the config file.
-    struct Key<Value: Sendable>: AnyKey {
+    struct Key<Value: Sendable & Equatable>: AnyKey {
         let path: WritableKeyPath<Settings, Value> & Sendable
         let name: String
         let kind: Kind<Value>
@@ -151,6 +155,12 @@ extension Settings {
         var comment: [String] { [summary, "Takes \(kind.takes)."] }
 
         var defaultText: String { kind.text(defaultValue) }
+
+        func text(in settings: Settings) -> String { kind.text(settings[keyPath: path]) }
+
+        func differs(_ one: Settings, _ other: Settings) -> Bool {
+            one[keyPath: path] != other[keyPath: path]
+        }
 
         func read(_ json: Any, into settings: inout Settings) -> String? {
             switch kind.read(json) {

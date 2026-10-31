@@ -24,6 +24,11 @@ private func contents(of url: URL) throws -> String {
     String(decoding: try Data(contentsOf: url), as: UTF8.self)
 }
 
+/// The state of a file that applies as it is.
+private func good(_ settings: Settings) -> ConfigStore.State {
+    ConfigStore.State(settings: settings, errors: [], isFileBroken: false)
+}
+
 private func settings(maxResults: Int) -> Settings {
     var settings = Settings()
     settings.maxResults = maxResults
@@ -67,7 +72,7 @@ private func started(
     let folder = root.url.appending(path: "simple-spotlight")
     let store = ConfigStore(folder: folder, watch: noWatch)
     let state = await store.start()
-    #expect(state == ConfigStore.State(settings: Settings(), errors: []))
+    #expect(state == good(Settings()))
     #expect(try contents(of: store.file) == ConfigFile.defaultText)
     #expect(await next(from: store) == state)
     #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == [ConfigFile.name])
@@ -77,7 +82,7 @@ private func started(
     let root = try TempFolder()
     try write(" \n", to: root.url.appending(path: ConfigFile.name))
     let (store, first) = await started(in: root)
-    #expect(first == ConfigStore.State(settings: Settings(), errors: []))
+    #expect(first == good(Settings()))
     #expect(try contents(of: store.file) == ConfigFile.defaultText)
 }
 
@@ -86,7 +91,7 @@ private func started(
     let text = #"{"maxResults": 3}"#
     try write(text, to: root.url.appending(path: ConfigFile.name))
     let (store, first) = await started(in: root)
-    #expect(first == ConfigStore.State(settings: settings(maxResults: 3), errors: []))
+    #expect(first == good(settings(maxResults: 3)))
     #expect(try contents(of: store.file) == text)
 }
 
@@ -106,7 +111,7 @@ private func started(
     try write(maxResults: 4, to: store.file)
     await store.reload()
     #expect(
-        await next(from: store) == ConfigStore.State(settings: settings(maxResults: 4), errors: []))
+        await next(from: store) == good(settings(maxResults: 4)))
 }
 
 @Test func anEditWithAnErrorKeepsTheLastGoodSettings() async throws {
@@ -122,7 +127,7 @@ private func started(
     try write(maxResults: 5, to: store.file)
     await store.reload()
     #expect(
-        await next(from: store) == ConfigStore.State(settings: settings(maxResults: 5), errors: []))
+        await next(from: store) == good(settings(maxResults: 5)))
 }
 
 @Test func aReadThatChangesNothingPublishesNothing() async throws {
@@ -148,7 +153,7 @@ private func started(
     try write(maxResults: 5, to: store.file)
     await store.reload()
     #expect(
-        await next(from: store) == ConfigStore.State(settings: settings(maxResults: 5), errors: []))
+        await next(from: store) == good(settings(maxResults: 5)))
 }
 
 @Test func aFileGoneOnceConfirmedMeansTheDefaults() async throws {
@@ -157,7 +162,7 @@ private func started(
     let (store, _) = await started(in: root, sleep: endsAtOnce)
     try FileManager.default.removeItem(at: store.file)
     await store.reload()
-    #expect(await next(from: store) == ConfigStore.State(settings: Settings(), errors: []))
+    #expect(await next(from: store) == good(Settings()))
     // Only opening the config file writes a new one.
     #expect(!FileManager.default.fileExists(atPath: store.file.path))
     #expect(try await store.makeDefaultFileIfMissing() == store.file)
@@ -241,7 +246,7 @@ private func started(
     defer { Task { await store.stop() } }
     try write(maxResults: 7, to: store.file)
     let state = await next(from: store, within: .seconds(10)) { $0.settings.maxResults == 7 }
-    #expect(state == ConfigStore.State(settings: settings(maxResults: 7), errors: []))
+    #expect(state == good(settings(maxResults: 7)))
 }
 
 @Test func anEmptyFileAtLaunchFilledMeanwhileIsKept() async throws {
@@ -253,7 +258,7 @@ private func started(
         try write(maxResults: 4, to: file)
     }
     let state = await store.start()
-    #expect(state == ConfigStore.State(settings: settings(maxResults: 4), errors: []))
+    #expect(state == good(settings(maxResults: 4)))
     #expect(try contents(of: file) == #"{"maxResults": 4}"#)
 }
 
@@ -312,7 +317,7 @@ private func isLink(_ url: URL) throws -> Bool {
     try write(maxResults: 4, to: target)
     try link(root.url.appending(path: ConfigFile.name), to: target)
     let (store, first) = await started(in: root)
-    #expect(first == ConfigStore.State(settings: settings(maxResults: 4), errors: []))
+    #expect(first == good(settings(maxResults: 4)))
     #expect(try isLink(store.file))
 }
 
@@ -323,7 +328,7 @@ private func isLink(_ url: URL) throws -> Bool {
     try write("", to: target)
     try link(root.url.appending(path: ConfigFile.name), to: target)
     let (store, first) = await started(in: root)
-    #expect(first == ConfigStore.State(settings: Settings(), errors: []))
+    #expect(first == good(Settings()))
     #expect(try isLink(store.file))
     #expect(try contents(of: target) == ConfigFile.defaultText)
     // Opening the config file once the target is emptied again does the same.
@@ -367,10 +372,86 @@ private func isLink(_ url: URL) throws -> Bool {
     defer { Task { await store.stop() } }
     try Data(#"{"maxResults": 9}"#.utf8).write(to: store.file, options: .atomic)
     let state = await next(from: store) { $0.settings.maxResults == 9 }
-    #expect(state == ConfigStore.State(settings: settings(maxResults: 9), errors: []))
+    #expect(state == good(settings(maxResults: 9)))
 }
 
 @Test func placesItsFolderInDotConfig() {
     let home = URL(filePath: "/Users/test", directoryHint: .isDirectory)
     #expect(ConfigStore.standardFolder(home: home).path == "/Users/test/.config/simple-spotlight")
+}
+
+// MARK: Changing
+
+@Test func aChangeIsWrittenIntoTheFileAndPublished() async throws {
+    let root = try TempFolder()
+    let text = "{\n  // Mine.\n  \"calculator\": false\n}\n"
+    try write(text, to: root.url.appending(path: ConfigFile.name))
+    let (store, _) = await started(in: root)
+
+    try await store.update { $0.maxResults = 12 }
+
+    #expect(try contents(of: store.file).hasPrefix("{\n  // Mine.\n  \"calculator\": false,\n"))
+    var expected = settings(maxResults: 12)
+    expected.calculator = false
+    #expect(await next(from: store) == good(expected))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.url.path) == [ConfigFile.name])
+}
+
+@Test func aChangeKeepsTheFilesPermissions() async throws {
+    let root = try TempFolder()
+    let file = root.url.appending(path: ConfigFile.name)
+    try write(maxResults: 4, to: file)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    let (store, _) = await started(in: root)
+
+    try await store.update { $0.maxResults = 5 }
+
+    #expect(
+        try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
+            == 0o600)
+}
+
+@Test func aChangeLeavesAFileWithAnErrorAlone() async throws {
+    let root = try TempFolder()
+    let text = #"{"maxResults": 4, "calculator": 2}"#
+    try write(text, to: root.url.appending(path: ConfigFile.name))
+    let (store, first) = await started(in: root)
+    #expect(first?.isFileBroken == true)
+
+    await #expect(throws: ConfigError.self) { try await store.update { $0.maxResults = 5 } }
+
+    #expect(try contents(of: store.file) == text)
+}
+
+@Test func aChangeWithNoFileWritesTheDefaultFileWithIt() async throws {
+    let root = try TempFolder()
+    try write(maxResults: 4, to: root.url.appending(path: ConfigFile.name))
+    let (store, _) = await started(in: root)
+    try FileManager.default.removeItem(at: store.file)
+    await store.reload()
+    #expect(await next(from: store) == good(Settings()))
+
+    try await store.update { $0.maxResults = 3 }
+
+    #expect(
+        try contents(of: store.file)
+            == ConfigFile.defaultText.replacingOccurrences(
+                of: "\"maxResults\": 8", with: "\"maxResults\": 3"))
+    #expect(await next(from: store) == good(settings(maxResults: 3)))
+}
+
+@Test func aChangeIsWrittenThroughALink() async throws {
+    let root = try TempFolder()
+    let elsewhere = try TempFolder()
+    let target = elsewhere.url.appending(path: "mine.json")
+    try write(maxResults: 4, to: target)
+    try link(root.url.appending(path: ConfigFile.name), to: target)
+    let (store, _) = await started(in: root)
+
+    try await store.update { $0.maxResults = 6 }
+
+    #expect(try isLink(store.file))
+    #expect(try contents(of: target) == #"{"maxResults": 6}"#)
+    #expect(
+        try FileManager.default.contentsOfDirectory(atPath: elsewhere.url.path) == ["mine.json"])
 }

@@ -234,3 +234,78 @@ func refusesABadKeyOnItsLine(entry: String, key: String, reason: String) {
         #expect(found.count == ConfigFile.mostErrors)
     }
 }
+
+// MARK: Changing
+
+/// `text` with `change` written in, or nil when it changes nothing.
+private func changing(_ text: String, _ change: (inout Settings) -> Void) throws -> String? {
+    try ConfigFile.changing(Data(text.utf8), change).map { String(decoding: $0, as: UTF8.self) }
+}
+
+@Test func aChangeReplacesOnlyItsValue() throws {
+    let changed = try #require(try changing(ConfigFile.defaultText) { $0.maxResults = 12 })
+    #expect(
+        changed
+            == ConfigFile.defaultText.replacingOccurrences(
+                of: "\"maxResults\": 8", with: "\"maxResults\": 12"))
+}
+
+@Test func aChangeKeepsTheUsersCommentsAndSpelling() throws {
+    let text = """
+        // Mine.
+        {
+          "hotkey": "CTRL+opt+K", // left as typed
+          /* fewer */ "maxResults": 4,
+        }
+
+        """
+    let changed = try changing(text) { $0.maxResults = 5 }
+    #expect(
+        changed == """
+            // Mine.
+            {
+              "hotkey": "CTRL+opt+K", // left as typed
+              /* fewer */ "maxResults": 5,
+            }
+
+            """)
+}
+
+@Test func aKeyTheFileLeavesOutGoesInWithItsComment() throws {
+    let changed = try #require(
+        try changing("{\n  \"maxResults\": 4\n}\n") { $0.dimAfterDays = 10 })
+    let comment = Settings.Keys.dimAfterDays.comment.map { "  // \($0)\n" }.joined()
+    #expect(changed == "{\n  \"maxResults\": 4,\n\n\(comment)  \"dimAfterDays\": 10\n}\n")
+}
+
+@Test func everyKeyChangedReadsBack() throws {
+    var expected = Settings()
+    expected.hotkey = KeyChord([.control, .shift], .f5)
+    expected.searchApplications = false
+    expected.searchSystemSettings = false
+    expected.calculator = false
+    expected.appFolders = ["/Apps", "~/More \"quoted\""]
+    expected.excludedApps = []
+    expected.maxResults = 20
+    expected.dimUnused = false
+    expected.dimAfterDays = 1
+    expected.showOnAllDisplays = true
+    expected.launchAtLogin = true
+    for text in ["{}", ConfigFile.defaultText, #"{"excludedApps": ["com.apple.Chess"],}"#] {
+        let changed = try #require(try changing(text) { $0 = expected })
+        #expect(parse(changed) == .settings(expected), "from \(text)")
+    }
+}
+
+@Test func aChangeTheFileAlreadyHasWritesNothing() throws {
+    #expect(
+        try changing(#"{"hotkey": "CMD+SPACE"}"#) { $0.hotkey = KeyChord(.command, .space) } == nil)
+    #expect(try changing("{}") { $0.maxResults = 8 } == nil)
+}
+
+@Test func aFileWithAnErrorIsntChanged() {
+    #expect(throws: ConfigError.self) {
+        try changing(#"{"maxResults": 30}"#) { $0.maxResults = 5 }
+    }
+    #expect(throws: ConfigError.self) { try changing("{") { $0.maxResults = 5 } }
+}

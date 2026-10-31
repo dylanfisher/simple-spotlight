@@ -20,6 +20,9 @@ public actor ConfigStore {
         /// What is wrong with the file, or with reading, creating or watching it, in that order;
         /// empty when the file applies as it is.
         public let errors: [ConfigError]
+        /// Whether the file is there but sets nothing, as it has an error or can't be read.
+        /// `update` refuses to change it then, since the user is fixing it.
+        public let isFileBroken: Bool
     }
 
     /// Starts watching `folder`, calling `onChange` after each batch of changes in it, and
@@ -29,6 +32,10 @@ public actor ConfigStore {
         -> @Sendable () -> Void
     /// Returns after the duration, or throws once cancelled.
     public typealias Sleep = @Sendable (Duration) async throws -> Void
+
+    /// How many times `update` makes its change to the file's text before it gives up, when the
+    /// file changes under each try.
+    static let attempts = 3
 
     /// How long after a read that finds the file gone or empty the store reads it again before
     /// it believes it. A save in place and a delete and create each take a few milliseconds;
@@ -153,6 +160,32 @@ public actor ConfigStore {
         return file
     }
 
+    /// Writes what `change` does to the file's settings into the file, keeping its comments,
+    /// spacing and key order (`ConfigFile.changing`), and reads it again, so `states` has the
+    /// change before this returns. With no file, or an empty one, the default file is the text
+    /// changed. A file with an error, or one that can't be read, is left alone and the error
+    /// thrown. The text is written through a link at the file's path, as the default file is,
+    /// and replaces the file only if it still has the bytes the change was made to; when it
+    /// doesn't, as when an editor saved meanwhile, the change is made again to the new bytes.
+    public func update(_ change: @Sendable (inout Settings) -> Void) throws(ConfigError) {
+        for _ in 0..<Self.attempts {
+            let found = read()
+            let text: Data
+            switch found {
+            case .failed(let error): throw error
+            case .missing: text = Data(ConfigFile.defaultText.utf8)
+            case .text(let data): text = found.isAbsent ? Data(ConfigFile.defaultText.utf8) : data
+            }
+            guard let changed = try ConfigFile.changing(text, change) else { return }
+            if try replace(found, with: changed, failing: "couldn't be changed") {
+                reload()
+                return
+            }
+        }
+        throw ConfigError(
+            reason: "couldn't be changed: it changed under each of \(Self.attempts) tries")
+    }
+
     /// Reads the file again and publishes what changed. A read that finds the file gone or
     /// empty where the last didn't waits for `confirm`; this read cancels one waiting.
     func reload() {
@@ -251,7 +284,8 @@ public actor ConfigStore {
     private func publish() {
         let state = State(
             settings: settings,
-            errors: readErrors + [createError, watchError, targetWatchError].compactMap { $0 })
+            errors: readErrors + [createError, watchError, targetWatchError].compactMap { $0 },
+            isFileBroken: !readErrors.isEmpty)
         guard state != published else { return }
         published = state
         feed.yield(state)
@@ -309,12 +343,22 @@ public actor ConfigStore {
     }
 
     /// Writes `ConfigFile.defaultText` as the file, which `found`, a read just made, says is
-    /// missing or empty. A symbolic link at the file's path stays: the text goes to the file it
-    /// leads to. The text is written beside its destination and renamed into place. Where there
-    /// was no file, the rename doesn't replace one made since (`RENAME_EXCL`); where it was
-    /// empty, it replaces it only if it is still empty, which leaves the microseconds between
-    /// that check and the rename.
+    /// missing or empty. A file written meanwhile, by the user, stays.
     func writeDefault(over found: Read) throws(ConfigError) {
+        _ = try replace(
+            found, with: Data(ConfigFile.defaultText.utf8), failing: "couldn't be created")
+    }
+
+    /// Writes `data` as the file in place of `found`, a read just made, and returns whether it
+    /// did; false when the file is no longer `found`. A symbolic link at the file's path stays:
+    /// the text goes to the file it leads to. The text is written beside its destination, with
+    /// the destination's permissions, and renamed into place. Where there was no file, the
+    /// rename doesn't replace one made since (`RENAME_EXCL`); otherwise it replaces the file
+    /// only if it still has `found`'s bytes, which leaves the microseconds between that check
+    /// and the rename. A failure is an error whose reason starts with `failing`.
+    private func replace(_ found: Read, with data: Data, failing: String) throws(ConfigError)
+        -> Bool
+    {
         let files = FileManager.default
         let link = linkTarget()
         let destination = link ?? file
@@ -324,26 +368,31 @@ public actor ConfigStore {
             if link == nil {
                 try files.createDirectory(at: folder, withIntermediateDirectories: true)
             }
-            try Data(ConfigFile.defaultText.utf8).write(to: partial, options: .withoutOverwriting)
+            try data.write(to: partial, options: .withoutOverwriting)
+            var info = stat()
+            if stat(destination.path, &info) == 0 {
+                guard chmod(partial.path, info.st_mode & 0o7777) == 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+            }
             let renamed: Int32
             if found == .missing {
                 renamed = renamex_np(partial.path, destination.path, UInt32(RENAME_EXCL))
-            } else if read().isAbsent, linkTarget() == link {
+            } else if read() == found, linkTarget() == link {
                 renamed = rename(partial.path, destination.path)
             } else {
-                // Written meanwhile, by the user: that file stays.
                 try files.removeItem(at: partial)
-                return
+                return false
             }
             guard renamed == 0 else {
                 let code = POSIXErrorCode(rawValue: errno) ?? .EIO
                 try files.removeItem(at: partial)
-                // Made meanwhile, by the user: that file stays.
-                if code == .EEXIST { return }
+                if code == .EEXIST { return false }
                 throw POSIXError(code)
             }
+            return true
         } catch {
-            var reason = "couldn't be created: \(error.localizedDescription)"
+            var reason = "\(failing): \(error.localizedDescription)"
             if files.fileExists(atPath: partial.path) {
                 do {
                     try files.removeItem(at: partial)
