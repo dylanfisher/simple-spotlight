@@ -932,3 +932,168 @@ extension Fixture {
     #expect(fixture.titles == ["Quit Simple Spotlight"])
     #expect(fixture.announcements.count == 1)
 }
+
+// MARK: Clicks in another panel
+
+/// A real mouse-down through the panel's `sendEvent`, which is the hook that moves the keys.
+@MainActor @Test func aMouseDownInAPanelThatIsNotKeyTellsTheController() throws {
+    let panel = SearchPanel()
+    var told: [SearchPanel] = []
+    panel.willTakeKeys = { told.append($0) }
+    let event = try #require(
+        NSEvent.mouseEvent(
+            with: .leftMouseDown, location: NSPoint(x: 10, y: 10), modifierFlags: [],
+            timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
+            clickCount: 1, pressure: 1))
+
+    panel.sendEvent(event)
+
+    #expect(told == [panel])
+}
+
+@MainActor @Test func takingTheKeysPutsTheCaretAtTheEndOfTheQuery() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+    try fixture.type("saf")
+
+    fixture.shown[1].willTakeKeys(fixture.shown[1])
+
+    let editor = try fixture.editor
+    #expect(editor.selectedRange() == NSRange(location: 3, length: 0))
+}
+
+@MainActor @Test func theFirstClickInAPanelThatIsNotKeyReachesTheRowsAndTheField() {
+    let fixture = Fixture()
+
+    #expect(fixture.controller.rowsViews.allSatisfy { $0.acceptsFirstMouse(for: nil) })
+    #expect(fixture.controller.panel.field.acceptsFirstMouse(for: nil))
+}
+
+@MainActor @Test func movingTheKeysDoesntAnnounceTheResultsAgain() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+    try fixture.type("saf")
+    let announced = fixture.announcements
+
+    fixture.shown[1].willTakeKeys(fixture.shown[1])
+
+    #expect(fixture.announcements == announced)
+}
+
+/// Only the field taking the keys holds the user's edits; the others are copies.
+@MainActor @Test func aChangeInAnotherPanelsFieldDoesntSearch() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+    try fixture.type("saf")
+    let announced = fixture.announcements
+
+    NotificationCenter.default.post(
+        name: NSControl.textDidChangeNotification, object: fixture.shown[1].field)
+    fixture.controller.controlTextDidChange(
+        Notification(name: NSControl.textDidChangeNotification, object: fixture.shown[1].field))
+
+    #expect(fixture.announcements == announced)
+}
+
+/// The copy into the other fields is a programmatic change, which doesn't search even when
+/// that field still has its editor from an earlier click.
+@MainActor @Test func copyingTheQueryIntoAFieldWithAnEditorDoesntSearch() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+    fixture.shown[1].willTakeKeys(fixture.shown[1])
+    fixture.shown[0].makeFirstResponder(fixture.shown[0].field)
+    try fixture.type("font")
+    let announced = fixture.announcements.count
+
+    fixture.shown[0].field.stringValue = "saf"
+
+    #expect(fixture.announcements.count == announced)
+}
+
+// MARK: Displays changing
+
+@MainActor @Test func aScreenChangeHidesThePanels() {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+
+    fixture.controller.screensChanged()
+
+    #expect(!fixture.controller.isShown)
+    #expect(fixture.shown.isEmpty)
+}
+
+@MainActor @Test func aScreenChangeWithTheSettingOnDrawsThePanelsForTheNewDisplays() async {
+    let fixture = Fixture()
+    fixture.controller.settings.showOnAllDisplays = true
+    await fixture.controller.queuedPrepare?.value
+    fixture.controller.screenCount = { 3 }
+    #expect(fixture.controller.panelCount == 1)
+
+    fixture.controller.screensChanged()
+    await fixture.controller.queuedPrepare?.value
+
+    #expect(fixture.controller.panelCount == 3)
+    #expect(fixture.controller.preparedCount == 3)
+}
+
+@MainActor @Test func aScreenChangeWithTheSettingOffMakesNoPanels() async {
+    let fixture = Fixture()
+    fixture.controller.screenCount = { 3 }
+
+    fixture.controller.screensChanged()
+    await fixture.controller.queuedPrepare?.value
+
+    #expect(fixture.controller.panelCount == 1)
+}
+
+@MainActor @Test func panelsMadeByAShowCountAsDrawn() {
+    let fixture = Fixture()
+
+    fixture.show(on: [tall, short, otherTall])
+
+    #expect(fixture.controller.preparedCount == 3)
+}
+
+@MainActor @Test func turningTheSettingOnWhileShownDrawsThePanelsAtTheNextHide() async {
+    let fixture = Fixture()
+    fixture.controller.screenCount = { 2 }
+    fixture.controller.settings.showOnAllDisplays = true
+    await fixture.controller.queuedPrepare?.value
+    fixture.controller.settings.showOnAllDisplays = false
+    fixture.controller.hide()
+    fixture.controller.show(on: [tall])
+    fixture.controller.settings.showOnAllDisplays = true
+    await fixture.controller.queuedPrepare?.value
+    #expect(fixture.controller.panelCount == 1)
+
+    fixture.controller.hide()
+    await fixture.controller.queuedPrepare?.value
+
+    #expect(fixture.controller.panelCount == 2)
+}
+
+@MainActor @Test func turningTheSettingOffReleasesTheExtraPanels() {
+    let fixture = Fixture()
+    fixture.controller.settings.showOnAllDisplays = true
+    fixture.controller.screenCount = { 3 }
+    fixture.show(on: [tall, short, otherTall])
+    fixture.controller.hide()
+    #expect(fixture.controller.panelCount == 3)
+
+    fixture.controller.settings.showOnAllDisplays = false
+
+    #expect(fixture.controller.panelCount == 1)
+    #expect(fixture.controller.preparedCount == 1)
+}
+
+@MainActor @Test func hidingReleasesPanelsPastTheNumberOfDisplays() {
+    let fixture = Fixture()
+    fixture.controller.settings.showOnAllDisplays = true
+    fixture.controller.screenCount = { 2 }
+    fixture.show(on: [tall, short, otherTall])
+    #expect(fixture.controller.panelCount == 3)
+
+    fixture.controller.hide()
+
+    #expect(fixture.controller.panelCount == 2)
+}

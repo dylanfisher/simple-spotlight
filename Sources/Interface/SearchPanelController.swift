@@ -19,14 +19,19 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     public var index: SearchIndex {
         didSet { search(keepingSelection: true) }
     }
-    /// Read for `maxResults`, `calculator` and `showOnAllDisplays`. Changing either of the first
-    /// two searches again, as setting `index` does; searching happens only while the panel
-    /// shows. The next show reads `showOnAllDisplays`.
+    /// Read for `maxResults`, `calculator` and `showOnAllDisplays`. Changing `maxResults` or
+    /// `calculator` searches again, as setting `index` does; searching happens only while the
+    /// panel shows. The next show reads `showOnAllDisplays`.
     public var settings: Search.Settings {
         didSet {
             if settings.showOnAllDisplays, !oldValue.showOnAllDisplays {
-                // The other displays' panels are drawn once too, so their first show is quick.
-                Task { [weak self] in self?.prepare() }
+                // Draws the other displays' panels once too, so their first show is quick. The
+                // coordinator's `prepare()` at launch draws the first panel; this covers the
+                // setting turning on later, and costs nothing when that call has already
+                // drawn them.
+                schedulePrepare()
+            } else if !settings.showOnAllDisplays, oldValue.showOnAllDisplays {
+                releaseUnusedPanels()
             }
             guard
                 settings.maxResults != oldValue.maxResults
@@ -65,7 +70,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     var panel: SearchPanel { slots[keyIndex].panel }
     /// The panels showing, the one that took the keys at the show first; empty while hidden.
     var shownPanels: [SearchPanel] { slots.prefix(shownCount).map(\.panel) }
-    /// The rows' views of every panel made, in `slots` order.
+    /// The rows' views of every panel made, in `slots` order. For tests.
     var rowsViews: [ResultListHostingView] { slots.map(\.rows) }
     let state = SearchState()
     let icons: IconCache
@@ -86,8 +91,18 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private var shownCount = 0
     /// The index in `slots` of the panel taking the keys.
     private var keyIndex = 0
-    /// How many of `slots`, from the first, `prepare()` has drawn.
-    private var preparedCount = 0
+    /// How many of `slots`, from the first, have been drawn, by `prepare()` or by a show.
+    private(set) var preparedCount = 0
+    /// Whether a `prepare()` is queued, so a second request doesn't queue another.
+    private var prepareQueued = false
+    /// Whether `prepare()` was asked for while shown, to run on the next hide.
+    private var prepareOnHide = false
+    /// The queued `prepare()`, for tests to wait on.
+    private(set) var queuedPrepare: Task<Void, Never>?
+    /// How many displays are connected.
+    var screenCount: () -> Int = { NSScreen.screens.count }
+    /// How many panels have been made.
+    var panelCount: Int { slots.count }
     /// The open of the config file ⌘, started last, for tests to wait on.
     private(set) var configFileOpened: Task<Void, Never>?
     /// `usage`'s frecencies as of the last show, so a keystroke only looks them up.
@@ -138,6 +153,10 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         self.ordersPanel = ordersPanel
         super.init()
         slots = [makeSlot()]
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil)
     }
 
     /// A panel holding rows that show `state`, its field and keys handled here.
@@ -184,6 +203,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         while slots.count < displays.count { slots.append(makeSlot()) }
         shownCount = displays.count
         keyIndex = 0
+        // The show draws these panels, so `prepare()` has nothing left to draw for them.
+        preparedCount = max(preparedCount, displays.count)
         for (index, display) in displays.enumerated() {
             slots[index].visible = display.visible
             slots[index].panel.setFrameTopLeftPoint(SearchPanel.topLeft(on: display.frame))
@@ -212,7 +233,12 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         else { return }
         keyIndex = index
         clicked.makeFirstResponder(clicked.field)
-        search(keepingSelection: true)
+        // Taking the keys selects the whole query; a click in the margin should leave the caret
+        // at the end instead. A click in the field itself then places it where clicked.
+        if let editor = clicked.field.currentEditor() {
+            editor.selectedRange = NSRange(location: editor.string.utf16.count, length: 0)
+        }
+        search(keepingSelection: true, announcing: false)
     }
 
     /// Orders the panel in fully transparent and out again in the same run-loop turn, so the
@@ -220,18 +246,55 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// rather than on the first show, which they slowed from about 6 ms to 37. The panel never
     /// becomes key or visible (docs/decisions/0012-warm-panel.md).
     /// With `showOnAllDisplays`, a panel for each screen is made and drawn this way, once.
+    /// Drawing a panel can't happen while panels show, so a request then waits for the next
+    /// hide.
     func prepare() {
-        guard ordersPanel, !isShown else { return }
-        let count = settings.showOnAllDisplays ? NSScreen.screens.count : 1
+        guard !isShown else {
+            prepareOnHide = settings.showOnAllDisplays
+            return
+        }
+        let count = settings.showOnAllDisplays ? max(screenCount(), 1) : 1
         while slots.count < count { slots.append(makeSlot()) }
-        for slot in slots[min(preparedCount, count)..<count] {
-            slot.panel.alphaValue = 0
-            slot.panel.orderFrontRegardless()
-            slot.panel.displayIfNeeded()
-            slot.panel.orderOut(nil)
-            slot.panel.alphaValue = 1
+        if ordersPanel {
+            for slot in slots[min(preparedCount, count)..<count] {
+                slot.panel.alphaValue = 0
+                slot.panel.orderFrontRegardless()
+                slot.panel.displayIfNeeded()
+                slot.panel.orderOut(nil)
+                slot.panel.alphaValue = 1
+            }
         }
         preparedCount = max(preparedCount, count)
+    }
+
+    /// Runs `prepare()` in a later run-loop turn, so what asked for it finishes first.
+    private func schedulePrepare() {
+        guard !prepareQueued else { return }
+        prepareQueued = true
+        queuedPrepare = Task { [weak self] in
+            self?.prepareQueued = false
+            self?.prepare()
+        }
+    }
+
+    /// Drops the panels past what the next show can use: all but the first without
+    /// `showOnAllDisplays`, else those past the number of displays. Never while shown.
+    private func releaseUnusedPanels() {
+        guard !isShown else { return }
+        let keep = settings.showOnAllDisplays ? max(screenCount(), 1) : 1
+        guard slots.count > keep else { return }
+        slots.removeSubrange(keep...)
+        preparedCount = min(preparedCount, keep)
+        keyIndex = 0
+    }
+
+    /// A display was connected, disconnected or rearranged. The panels showing are placed for
+    /// the old arrangement and may overlap, so they hide; the next show places them again.
+    @objc func screensChanged() {
+        hide()
+        releaseUnusedPanels()
+        // A display that came with the setting on gets its panel drawn before the next hotkey.
+        if settings.showOnAllDisplays { schedulePrepare() }
     }
 
     /// Hides every panel, keeping the query for the next show.
@@ -240,8 +303,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         isShown = false
         let shown = shownPanels
         shownCount = 0
-        guard ordersPanel else { return }
-        for panel in shown { panel.orderOut(nil) }
+        if ordersPanel {
+            for panel in shown { panel.orderOut(nil) }
+        }
+        releaseUnusedPanels()
+        if prepareOnHide {
+            prepareOnHide = false
+            schedulePrepare()
+        }
     }
 
     public func toggle() {
@@ -265,8 +334,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// Fills the rows for the query: the leading items, the calculator's row, then the index's
     /// best matches, `maxResults` in all. The first row is selected, or with `keepingSelection`
     /// the row of the item selected before, if it is still there. Does nothing while the panel
-    /// is hidden: showing searches, and a search no one sees would still be announced.
-    private func search(keepingSelection: Bool = false) {
+    /// is hidden: showing searches, and a search no one sees would still be announced. Moving
+    /// the keys searches again without `announcing`, as VoiceOver has said the results.
+    private func search(keepingSelection: Bool = false, announcing: Bool = true) {
         guard isShown else { return }
         let query = query
         let kept = keepingSelection ? selectedRow?.item.id : nil
@@ -282,11 +352,13 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         rows = Array(rows.prefix(limit))
         state.rows = rows
         state.selection = kept.flatMap { id in rows.firstIndex { $0.item.id == id } } ?? 0
-        if let first = rows.first {
-            let count = rows.count == 1 ? "1 result" : "\(rows.count) results"
-            announce("\(count), \(ResultRow.accessibilityLabel(for: first.item))")
-        } else {
-            announce("No results")
+        if announcing {
+            if let first = rows.first {
+                let count = rows.count == 1 ? "1 result" : "\(rows.count) results"
+                announce("\(count), \(ResultRow.accessibilityLabel(for: first.item))")
+            } else {
+                announce("No results")
+            }
         }
         icons.request(
             rows.compactMap {
@@ -484,6 +556,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     }
 
     public func controlTextDidChange(_ notification: Notification) {
+        // Only edits in the field taking the keys are the user's; the other panels' fields are
+        // set from this one.
+        guard (notification.object as? NSTextField) === panel.field else { return }
         search()
     }
 

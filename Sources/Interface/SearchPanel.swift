@@ -12,7 +12,7 @@ final class SearchPanel: NSPanel {
     /// Told, with the panel, when a click is about to make it key, before it does: with a panel
     /// on each display, the one clicked takes the keys from another, which then resigns them.
     var willTakeKeys: @MainActor (SearchPanel) -> Void = { _ in }
-    let field = NSTextField()
+    let field = SearchField()
 
     static let width: CGFloat = 680
     static let fieldHeight: CGFloat = 56
@@ -231,4 +231,10 @@ private final class EdgeView: NSView {
         let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         return NSColor(white: 1, alpha: isDark ? 0.2 : 0.6)
     }
+}
+
+/// The search field. The click that makes its panel key also places the caret.
+@MainActor
+final class SearchField: NSTextField {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
