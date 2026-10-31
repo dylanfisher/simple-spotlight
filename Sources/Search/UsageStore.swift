@@ -64,7 +64,8 @@ public actor UsageStore {
         }
 
         /// Counts an open of the item with `id` from `query` at `date`. When the item has more
-        /// than `UsageStore.queriesPerItem` queries, the ones with the lowest frecency go.
+        /// than `UsageStore.queriesPerItem` queries, the ones with the lowest frecency go, never the
+        /// one just recorded.
         public mutating func record(_ id: String, query: String, at date: Date) {
             let earlier = entries[id]
             var queries = earlier?.queries ?? [:]
@@ -73,10 +74,16 @@ public actor UsageStore {
                 queries[key] = Opens.adding(at: date, to: queries[key])
             }
             if queries.count > UsageStore.queriesPerItem {
-                let kept = Set(
-                    queries.map { ($0.key, $0.value.frecency(at: date)) }
-                        .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
-                        .prefix(UsageStore.queriesPerItem).map(\.0))
+                // Over the limit means the query just recorded is new. It stays, whatever it
+                // weighs, so a pick can start to count; the others compete for the rest.
+                var others = queries
+                others[key] = nil
+                let heaviest = others.map { (key: $0.key, frecency: $0.value.frecency(at: date)) }
+                    .sorted {
+                        $0.frecency != $1.frecency ? $0.frecency > $1.frecency : $0.key < $1.key
+                    }
+                    .prefix(UsageStore.queriesPerItem - 1)
+                let kept = Set(heaviest.map(\.key) + [key])
                 queries = queries.filter { kept.contains($0.key) }
             }
             entries[id] = Entry(opens: .adding(at: date, to: earlier?.opens), queries: queries)

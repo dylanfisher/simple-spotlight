@@ -136,7 +136,8 @@ private final class Problems: @unchecked Sendable {
     #expect(queries["c"]?.count == 2)
 }
 
-@Test func keepsTheMostRecentQueriesOfAnItem() {
+/// Queries at the same weight leave the oldest first, as it has decayed most.
+@Test func dropsTheLowestFrecencyQueryOfAnItemOverTheLimit() {
     var usage = UsageStore.Usage()
     let count = UsageStore.queriesPerItem + 2
     for n in 0..<count {
@@ -146,6 +147,19 @@ private final class Problems: @unchecked Sendable {
     let kept = usage.entries["a"]?.queries.keys.sorted() ?? []
     #expect(kept == (2..<count).map { "q\($0)" }.sorted())
     #expect(usage.entries["a"]?.opens.count ?? 0 > Double(count) - 1)
+}
+
+/// The query just recorded stays even when it weighs least, so the next pick for it can count.
+@Test func theQueryJustRecordedSurvivesEightHeavierOnes() {
+    var usage = UsageStore.Usage()
+    for n in 0..<UsageStore.queriesPerItem {
+        for _ in 0..<3 { usage.record("a", query: "q\(n)", at: now) }
+    }
+    usage.record("a", query: "new", at: now)
+
+    let kept = usage.entries["a"]?.queries ?? [:]
+    #expect(kept.count == UsageStore.queriesPerItem)
+    #expect(kept["new"] != nil)
 }
 
 @Test func aQueryIsFoldedTrimmedAndCut() {
