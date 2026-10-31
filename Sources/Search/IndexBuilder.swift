@@ -11,10 +11,15 @@ public struct IndexBuilder: Sendable {
 
     public let apps: AppProvider
     public let settingsPanes: SettingsPaneProvider
+    /// Ids of items left out of the build: apps' and panes' bundle IDs.
+    public let excludedIDs: Set<String>
 
-    public init(apps: AppProvider, settingsPanes: SettingsPaneProvider) {
+    public init(
+        apps: AppProvider, settingsPanes: SettingsPaneProvider, excludedIDs: Set<String> = []
+    ) {
         self.apps = apps
         self.settingsPanes = settingsPanes
+        self.excludedIDs = excludedIDs
     }
 
     /// Runs both providers at once, off the caller's actor, since they read the disk. Throws
@@ -26,7 +31,8 @@ public struct IndexBuilder: Sendable {
         async let paneScan = settingsPanes.items()
         let (found, panes) = try await (appScan, paneScan)
         return Build(
-            items: found.items + panes.items, problems: found.problems + panes.problems,
+            items: (found.items + panes.items).filter { !excludedIDs.contains($0.id) },
+            problems: found.problems + panes.problems,
             duration: clock.now - start)
     }
 }

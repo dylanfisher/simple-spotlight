@@ -32,6 +32,20 @@ import Testing
     #expect(build.problems.map(\.path) == [missingApps.path, missingPanes.path])
 }
 
+@Test func leavesOutExcludedIDs() async throws {
+    let apps = try TempFolder()
+    let extensions = try TempFolder()
+    try makeApp("Mail", in: apps.url, id: "test.mail")
+    try makeApp("Chess", in: apps.url, id: "test.chess")
+    try makePane("Sound", in: extensions.url, id: "test.sound", displayName: "Sound")
+    let builder = IndexBuilder(
+        apps: AppProvider(folders: [apps.url], languages: ["en"], extraApps: []),
+        settingsPanes: SettingsPaneProvider(
+            extensionFolders: [extensions.url], preferencePaneFolders: [], languages: ["en"]),
+        excludedIDs: ["test.chess", "test.sound"])
+    #expect(try await builder.build().items.map(\.id) == ["test.mail"])
+}
+
 @Suite(.serialized) struct IndexBuilderTiming {
     /// The default app folders, less any this Mac doesn't have.
     static var appFolders: [URL] {
