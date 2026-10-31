@@ -75,8 +75,12 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   Every settings pane, a `.prefPane` included, shows the System Settings app's icon, and the
   calculator's row the Calculator app's; command and problem rows show system symbols.
 - **The calculator's row.** Its answer is the title, large, with the expression under it in
-  secondary text. Selected, it gets a gray fill with primary text rather than the accent color
-  the other rows get: Return copies its answer rather than opening something.
+  secondary text.
+- **The selection is neutral.** A selected row, of any kind, gets a rounded fill a little darker
+  than the panel in light mode (black at 9%) and a little lighter in dark mode (white at 12%),
+  twice as strong with Increase Contrast, and keeps the text colors of an unselected row, as
+  Spotlight's panel does on macOS 26. The accent color with white text came first; the user
+  asked for Spotlight's quieter look.
 - **Seams for P6.** The controller takes the index, settings, `leadingItems` (rows such as a
   config error, shown first and counted in `maxResults`), a `ResultOpener` (the workspace in the
   app, a recorder in tests), the config file's maker for ⌘,, a handler for `.command` rows, the

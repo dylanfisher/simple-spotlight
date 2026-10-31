@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Search
 import Testing
 
@@ -66,16 +66,38 @@ private func boldCharacters(_ title: AttributedString) -> String {
     }
 }
 
-/// The calculator's row is selected in gray, as its answer is copied rather than opened.
-@Test func onlyTheCalculatorRowIsSelectedWithoutTheAccentColor() throws {
-    let calculation = try #require(
-        CalculatorProvider(locale: Locale(identifier: "en_US")).item(for: "1+1"))
-    let app = SearchItem(
-        id: "com.apple.Safari", kind: .app, title: "Safari", subtitle: nil,
-        target: .openFile(URL(filePath: "/Applications/Safari.app")))
+/// `fill` as drawn in the appearance `name`, in gray.
+@MainActor private func resolved(_ fill: NSColor, in name: NSAppearance.Name) throws -> NSColor {
+    let appearance = try #require(NSAppearance(named: name))
+    var color: NSColor?
+    appearance.performAsCurrentDrawingAppearance {
+        color = fill.usingColorSpace(.genericGray)
+    }
+    return try #require(color)
+}
 
-    #expect(ResultRow.selection(for: calculation) == .neutral)
-    #expect(ResultRow.selection(for: app) == .accent)
+/// Every row is selected the same way: a fill a little darker than the panel in light mode and
+/// a little lighter in dark mode, as Spotlight's is, not the accent color.
+@MainActor @Test func theSelectionIsANeutralFill() throws {
+    let light = try resolved(ResultRow.selectionFill, in: .aqua)
+    let dark = try resolved(ResultRow.selectionFill, in: .darkAqua)
+
+    #expect(light.whiteComponent == 0)
+    #expect((0.08...0.12).contains(light.alphaComponent))
+    #expect(dark.whiteComponent == 1)
+    #expect((0.08...0.12).contains(dark.alphaComponent))
+}
+
+/// Increase Contrast makes the fill stronger, so the selection stays easy to see. Its
+/// appearances can only be matched, not made, so the fill is checked for each case directly.
+@Test func theSelectionIsStrongerWithIncreasedContrast() {
+    for dark in [false, true] {
+        let usual = ResultRow.selectionFill(dark: dark, highContrast: false)
+        let high = ResultRow.selectionFill(dark: dark, highContrast: true)
+
+        #expect(high.whiteComponent == usual.whiteComponent)
+        #expect(high.alphaComponent > usual.alphaComponent)
+    }
 }
 
 @Test func aRowReadsItsTitleThenItsSubtitle() {

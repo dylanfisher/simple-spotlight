@@ -13,14 +13,6 @@ struct ResultRow: View {
         case symbol(String)
     }
 
-    /// How a selected row is drawn.
-    enum Selection: Equatable {
-        /// White text on the accent color: a row that opens something.
-        case accent
-        /// Primary text on a gray fill: the calculator's row, whose answer is copied.
-        case neutral
-    }
-
     nonisolated static let height: CGFloat = 48
     /// Most of the row's height, larger than the title and subtitle stacked, as Finder's list
     /// draws them. App icons leave a margin around their shape, so the shape itself is smaller.
@@ -46,10 +38,7 @@ struct ResultRow: View {
         .frame(height: Self.height)
         .background {
             if isSelected {
-                switch Self.selection(for: row.item) {
-                case .accent: RoundedRectangle(cornerRadius: 8).fill(Color.accentColor)
-                case .neutral: RoundedRectangle(cornerRadius: 8).fill(.quaternary)
-                }
+                RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: Self.selectionFill))
             }
         }
         .contentShape(Rectangle())
@@ -58,9 +47,22 @@ struct ResultRow: View {
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
-    /// Whether the row is drawn as selected on the accent color, in white.
-    private var onAccent: Bool {
-        isSelected && Self.selection(for: row.item) == .accent
+    /// The selected row's fill, under text in the colors unselected rows use, as Spotlight
+    /// draws it: black over the light panel and white over the dark one, faint enough to read as
+    /// a darker or lighter gray, stronger with Increase Contrast.
+    static let selectionFill = NSColor(name: nil) { appearance in
+        let match = appearance.bestMatch(from: [
+            .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+        ])
+        return selectionFill(
+            dark: match == .darkAqua || match == .accessibilityHighContrastDarkAqua,
+            highContrast: match == .accessibilityHighContrastAqua
+                || match == .accessibilityHighContrastDarkAqua)
+    }
+
+    /// `selectionFill` in a dark or light appearance, with or without Increase Contrast.
+    nonisolated static func selectionFill(dark: Bool, highContrast: Bool) -> NSColor {
+        NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.12 : 0.09) * (highContrast ? 2 : 1))
     }
 
     /// The title with the matched characters bold, over the subtitle when there is one.
@@ -68,12 +70,11 @@ struct ResultRow: View {
         VStack(alignment: .leading, spacing: 1) {
             Text(Self.title(row.item.title, bold: row.ranges))
                 .font(.system(size: 15))
-                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                .foregroundStyle(.primary)
             if let subtitle = row.item.subtitle {
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(
-                        onAccent ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(.secondary)
             }
         }
         .lineLimit(1)
@@ -95,11 +96,6 @@ struct ResultRow: View {
         }
         .lineLimit(1)
         .truncationMode(.tail)
-    }
-
-    /// How `item`'s row is drawn when selected.
-    nonisolated static func selection(for item: SearchItem) -> Selection {
-        item.kind == .calculation ? .neutral : .accent
     }
 
     /// What VoiceOver reads for `item`'s row: its title, then its subtitle. A calculation reads
@@ -125,7 +121,7 @@ struct ResultRow: View {
         case .symbol(let name):
             Image(systemName: name)
                 .font(.system(size: 24))
-                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(.secondary)
         }
     }
 
