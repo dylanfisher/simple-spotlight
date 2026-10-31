@@ -95,3 +95,11 @@ import Testing
         #expect(base.indexKeys != changed.indexKeys)
     }
 }
+
+/// The settings window's steppers take their bounds from these.
+@Test func theNumberKeysTakeTheirPublishedRanges() {
+    #expect(Settings.Keys.maxResults.comment.last == "Takes a whole number from 1 to 20.")
+    #expect(Settings.maxResultsRange == 1...20)
+    #expect(Settings.Keys.dimAfterDays.comment.last == "Takes a whole number from 1 to 365.")
+    #expect(Settings.dimAfterDaysRange == 1...365)
+}

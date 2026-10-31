@@ -22,6 +22,18 @@ public enum HomePath {
         return rest.isEmpty ? home : home.appending(path: rest, directoryHint: .isDirectory)
     }
 
+    /// `folder` as the config file writes it: `~/…` inside `home`, `~` for `home` itself, and
+    /// the full path anywhere else.
+    public static func written(_ folder: URL, home: URL = current) -> String {
+        let path = folder.standardizedFileURL.path(percentEncoded: false)
+        let homePath = home.standardizedFileURL.path(percentEncoded: false)
+        let base = homePath.hasSuffix("/") ? String(homePath.dropLast()) : homePath
+        let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        if trimmed == base { return "~" }
+        guard trimmed.hasPrefix(base + "/") else { return trimmed }
+        return "~" + trimmed.dropFirst(base.count)
+    }
+
     /// The part of `path` after `~` or `~/`, when it starts with one of them.
     private static func underHome(_ path: String) -> Substring? {
         guard path == "~" || path.hasPrefix("~/") else { return nil }

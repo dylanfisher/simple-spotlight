@@ -23,6 +23,11 @@ public struct Settings: Sendable, Equatable {
     /// Every setting at its default.
     public init() {}
 
+    /// The values `maxResults` takes.
+    public static let maxResultsRange = 1...20
+    /// The values `dimAfterDays` takes.
+    public static let dimAfterDaysRange = 1...365
+
     /// The keys the index is built from. Two settings with equal `indexKeys` ask for the same
     /// index, so the app rebuilds only when they differ.
     public var indexKeys: IndexKeys {
@@ -92,14 +97,14 @@ extension Settings {
             \.excludedApps, "excludedApps", .identifiers, default: [],
             "Bundle IDs of apps and panes to leave out of the results.")
         static let maxResults = Key(
-            \.maxResults, "maxResults", .integer(1...20), default: 8,
+            \.maxResults, "maxResults", .integer(maxResultsRange), default: 8,
             "The most rows the panel shows.")
         static let dimUnused = Key(
             \.dimUnused, "dimUnused", .bool, default: true,
             "Draw the apps and panes you haven't opened lately fainter, so the ones you use stand out."
         )
         static let dimAfterDays = Key(
-            \.dimAfterDays, "dimAfterDays", .integer(1...365), default: 30,
+            \.dimAfterDays, "dimAfterDays", .integer(dimAfterDaysRange), default: 30,
             "With dimUnused, how many days after you last opened an app or pane its row dims.")
         static let showOnAllDisplays = Key(
             \.showOnAllDisplays, "showOnAllDisplays", .bool, default: false,

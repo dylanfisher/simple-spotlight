@@ -88,3 +88,18 @@ func refusesABadChord(text: String, reason: String) {
         #expect(Int(key.code) == code, "\(key)")
     }
 }
+
+@Test func findsEachKeyByItsCode() {
+    for key in KeyChord.Key.allCases {
+        #expect(KeyChord.Key(code: key.code) == key)
+    }
+    // The left arrow, which no chord can end with.
+    #expect(KeyChord.Key(code: 0x7B) == nil)
+}
+
+@Test func checksAChordAsTheFileWouldTakeIt() throws {
+    #expect(try KeyChord(checking: [.control, .option], .k) == KeyChord([.control, .option], .k))
+    #expect(try KeyChord(checking: [], .f5) == KeyChord([], .f5))
+    #expect(throws: KeyChord.ParseError.self) { try KeyChord(checking: [], .k) }
+    #expect(throws: KeyChord.ParseError.self) { try KeyChord(checking: .shift, .k) }
+}

@@ -122,6 +122,13 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
             }
         }
 
+        /// The key whose virtual key code is `code`; nil for a key no chord ends with, such as
+        /// an arrow.
+        public init?(code: UInt16) {
+            guard let key = Self.allCases.first(where: { $0.code == code }) else { return nil }
+            self = key
+        }
+
         /// Whether it is an F-key, which may be a chord without a modifier.
         var isFunctionKey: Bool {
             rawValue.count > 1 && rawValue.first == "f" && Int(rawValue.dropFirst()) != nil
@@ -199,6 +206,12 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
         guard let key = Key(rawValue: last.lowercased()) else {
             throw ParseError(reason: "\"\(last)\" isn't a key")
         }
+        try self.init(checking: modifiers, key)
+    }
+
+    /// `key` with `modifiers`, as a shortcut recorder sees them pressed, when the config file
+    /// would take the chord: a key that isn't an F-key needs a modifier other than shift alone.
+    public init(checking modifiers: Modifiers, _ key: Key) throws(ParseError) {
         if !key.isFunctionKey {
             let range = Key.functionKeyRange
             guard !modifiers.isEmpty else {

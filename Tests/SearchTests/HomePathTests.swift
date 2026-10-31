@@ -20,3 +20,12 @@ private let home = URL(filePath: "/Users/someone", directoryHint: .isDirectory)
         #expect(!HomePath.isValid(path), "\(path)")
     }
 }
+
+@Test func writesAFolderInTheHomeFolderWithATilde() {
+    #expect(HomePath.written(URL(filePath: "/Users/someone/Apps"), home: home) == "~/Apps")
+    #expect(HomePath.written(URL(filePath: "/Users/someone/"), home: home) == "~")
+    #expect(
+        HomePath.written(URL(filePath: "/Users/someoneelse/Apps"), home: home)
+            == "/Users/someoneelse/Apps")
+    #expect(HomePath.written(URL(filePath: "/Applications/"), home: home) == "/Applications")
+}
