@@ -21,6 +21,7 @@ against a codebase you haven't searched.
 | a result type, provider or ranking rule | `ls Sources/Search/` |
 | a view, window or controller | `ls Sources/Interface/` |
 | a free function | `rg '^\s*(public )?func ' Sources/Base/` |
+| a file or folder path | `rg 'HomePath.folder\|filePath: "/' Sources/Search/` — paths are built in Search, `~` through `HomePath` |
 | a preference or config key | `rg '<key>' Sources/Search/Settings.swift` — every key is declared there, in `Settings.Keys` |
 | a type | `rg '(struct\|class\|enum\|protocol\|actor) <Name>\b'` |
 
@@ -31,9 +32,9 @@ duplicate it — do not abstract yet (principle 3).
 
 | Tier | Path | What belongs here | May import from |
 |---|---|---|---|
-| **base** | `Sources/Base` | Domain-free building blocks: text folding and matching, expression evaluation, config text scanning. Foundation only; no AppKit. Portable as-is. | nothing |
-| **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator), ranking, and the config file (`Settings` declares its keys and holds their values; `ConfigFile` parses it; `ConfigStore` reads and watches it). No AppKit, so it's testable without a window. | base |
-| **interface** | `Sources/Interface` | The search panel, its SwiftUI views, the global hotkey, the login item, launching results, and the coordinator that applies each config state. | search, base |
+| **base** | `Sources/Base` | Domain-free building blocks: text folding and matching, expression evaluation and number formatting, config text scanning. Foundation only; no AppKit. Portable as-is. | nothing |
+| **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator, built-in commands), ranking with usage, the config file (`Settings` declares its keys and holds their values; `ConfigFile` parses it; `ConfigStore` reads and watches it), the files the app writes for itself (`…Store` actors), and folder watching. No AppKit, so it's testable without a window. | base |
+| **interface** | `Sources/Interface` | The search panel, its SwiftUI views and icons, the global hotkey and its conflict alert, the login item, launching results, and the coordinator that applies each config state. | search, base |
 | **app** | `Sources/SimpleSpotlight` | The executable: app delegate and wiring. Kept thin. | everything |
 
 **Dependency direction is one-way: app → interface → search → base.** Never upward.
