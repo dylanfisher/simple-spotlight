@@ -25,6 +25,12 @@ public struct SettingsPaneProvider: Sendable {
         }
     }
 
+    /// The URL that opens the pane whose bundle ID is `id` in System Settings, at the section
+    /// `anchor` names when there is one; nil when `id` can't be part of a URL.
+    public static func paneURL(_ id: String, anchor: String? = nil) -> URL? {
+        URL(string: "x-apple.systempreferences:\(id)" + (anchor.map { "?\($0)" } ?? ""))
+    }
+
     /// Names for panes whose bundles hold only an internal name in every language. See
     /// docs/decisions/0004-settings-pane-names.md.
     static let names = [
@@ -106,8 +112,7 @@ public struct SettingsPaneProvider: Sendable {
         guard attributes?["EXExtensionPointIdentifier"] as? String == Self.extensionPoint,
             settings?["allowsXAppleSystemPreferencesURLScheme"] as? Bool == true
         else { return nil }
-        guard let id = info.identifier, let target = URL(string: "x-apple.systempreferences:\(id)")
-        else {
+        guard let id = info.identifier, let target = Self.paneURL(id) else {
             throw IndexProblem(path: url.path, reason: "It has no bundle ID to open it by.")
         }
         guard !Self.hidden.contains(id) else { return nil }
