@@ -35,6 +35,9 @@ none. Write `/usr/bin/log`, since zsh's `log` is a builtin.
   so a second `open "$app"` of the running app shows the panel. Between shows, bringing another
   app forward (`osascript -e 'tell application "Finder" to activate'`) takes the keys, which
   hides it. Report the first show apart from the rest.
+  The multi-display B1 (`showOnAllDisplays` with two or more displays) has not been measured
+  yet. Set the key in the temp config, connect the displays, and take the same `show <n>: <ms> ms`
+  lines for the first and later shows (decision 0013).
 - **B2:** the model part (search, ranking and the calculator) is timed by serialized tests in
   `Tests/SearchTests` with bounds about 5× the budget. The path through the panel is timed with
   a throwaway test that puts text in the field's editor and lays out the rows, on the real index;

@@ -39,6 +39,20 @@ hotkey to the panel with the field taking the keys) still applies.
   Turning it on draws a panel for each screen once, transparent, as `prepare()` does for the
   first (decision 0012), so the first show on several displays doesn't pay for making their
   windows.
+- **Displays changing.** When the screen layout changes (`didChangeScreenParametersNotification`),
+  shown panels hide, since they were placed for the old layout and could overlap; the next show
+  places them again. With the setting on, `prepare()` then runs, so a newly connected display's
+  panel is drawn before the next hotkey. A `prepare()` asked for while panels show waits for the
+  next hide. A panel made by a show counts as drawn.
+- **Releasing panels.** Turning the setting off drops all but the first panel, and a hide drops
+  those past the number of displays, so a disconnected display doesn't keep a window.
+- **Moving the keys keeps the caret at the end** of the query and doesn't announce the results
+  again; a click in the field itself places the caret where clicked. The first click on a
+  non-key panel reaches its rows and field (`acceptsFirstMouse`), so it also selects or opens.
+  Only the field taking the keys searches on a change.
+- **VoiceOver.** Focus moved to another panel by VoiceOver alone, with no click, makes the
+  panel taking the keys resign, which hides everything. That is the limit: VoiceOver can't move
+  between the panels.
 - **Off by default.** With it off, a show uses only the first panel, as before.
 
 ## Alternatives considered
@@ -64,3 +78,6 @@ check. A display connected after the setting was turned on gets its panel made a
 its first show, so that one show is slower. What tests can't see: the panels on real screens,
 the click that moves the keys (`sendEvent` with a real mouse-down), and the non-key panels'
 look.
+
+B1 with several displays is measured by hand, as tests can't show real screens; the recipe is
+in performance.md.
