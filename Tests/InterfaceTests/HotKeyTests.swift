@@ -45,3 +45,62 @@ private let commandSpace = KeyChord(.command, .space)
 @Test func readsMacOSShortcuts() throws {
     #expect(try !HotKey.systemHotKeys().isEmpty)
 }
+
+/// Chords no one uses, so the tests can take them from the system for a moment.
+private let rareA = KeyChord([.control, .option, .shift, .command], .f18)
+private let rareB = KeyChord([.control, .option, .shift, .command], .f19)
+
+/// Whether a chord is free, found by registering it with a hotkey of its own.
+@MainActor private func isFree(_ chord: KeyChord) -> Bool {
+    let probe = HotKey()
+    do throws(HotKeyConflict) {
+        try probe.register(chord) {}
+        probe.unregister()
+        return true
+    } catch {
+        return false
+    }
+}
+
+@MainActor @Test func aRefusedNewChordKeepsTheOldOne() throws {
+    let hotKey = HotKey()
+    let holder = HotKey()
+    try hotKey.register(rareA) {}
+    try holder.register(rareB) {}
+    defer {
+        hotKey.unregister()
+        holder.unregister()
+    }
+
+    #expect(throws: HotKeyConflict.refused(OSStatus(eventHotKeyExistsErr))) {
+        try hotKey.register(rareB) {}
+    }
+    #expect(!isFree(rareA))
+}
+
+@MainActor @Test func aNewChordReplacesTheOld() throws {
+    let hotKey = HotKey()
+    try hotKey.register(rareA) {}
+    try hotKey.register(rareB) {}
+    defer { hotKey.unregister() }
+
+    #expect(isFree(rareA))
+    #expect(!isFree(rareB))
+}
+
+@MainActor @Test func registeringTheSameChordAgainKeepsIt() throws {
+    let hotKey = HotKey()
+    try hotKey.register(rareA) {}
+    defer { hotKey.unregister() }
+
+    try hotKey.register(rareA) {}
+    #expect(!isFree(rareA))
+}
+
+@MainActor @Test func unregisteringFreesTheChord() throws {
+    let hotKey = HotKey()
+    try hotKey.register(rareA) {}
+
+    hotKey.unregister()
+    #expect(isFree(rareA))
+}

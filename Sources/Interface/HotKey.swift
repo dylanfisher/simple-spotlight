@@ -31,8 +31,8 @@ public struct SystemHotKey: Equatable, Sendable {
 /// than take a chord from the whole system.
 @MainActor
 public protocol HotKeyRegistrar: AnyObject {
-    /// Makes `chord` call `onPress`, in place of a chord registered before. On failure no chord
-    /// is registered.
+    /// Makes `chord` call `onPress`, in place of a chord registered before. On failure the chord
+    /// registered before stays.
     func register(_ chord: KeyChord, onPress: @escaping @MainActor () -> Void)
         throws(HotKeyConflict)
     /// Gives the registered chord back to the system, if there is one.
@@ -52,6 +52,8 @@ public final class HotKey: HotKeyRegistrar {
     /// The ID of the latest registration, so a press of a chord replaced since is ignored.
     private var id: UInt32 = 0
     private var onPress: (@MainActor () -> Void)?
+    /// The chord `registered` holds.
+    private var current: KeyChord?
 
     public init() {}
 
@@ -60,24 +62,33 @@ public final class HotKey: HotKeyRegistrar {
         if let handler { RemoveEventHandler(handler) }
     }
 
+    /// Registers the new chord before giving up the old one, so a chord that is refused leaves
+    /// the one that works.
     public func register(_ chord: KeyChord, onPress: @escaping @MainActor () -> Void)
         throws(HotKeyConflict)
     {
-        unregister()
+        if chord == current, registered != nil {
+            self.onPress = onPress
+            return
+        }
         try installHandler()
-        id += 1
+        let newID = id + 1
         var reference: EventHotKeyRef?
         let status = RegisterEventHotKey(
             UInt32(chord.key.code), chord.modifiers.rawValue,
-            EventHotKeyID(signature: Self.signature, id: id), GetApplicationEventTarget(), 0,
+            EventHotKeyID(signature: Self.signature, id: newID), GetApplicationEventTarget(), 0,
             &reference)
         guard status == noErr, let reference else { throw .refused(status) }
+        unregister()
+        id = newID
         registered = reference
+        current = chord
         self.onPress = onPress
     }
 
     public func unregister() {
         onPress = nil
+        current = nil
         guard let registered else { return }
         UnregisterEventHotKey(registered)
         self.registered = nil

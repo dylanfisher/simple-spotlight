@@ -35,7 +35,12 @@ private final class StubHotKey: HotKeyRegistrar {
         self.onPress = onPress
     }
 
-    func unregister() { onPress = nil }
+    private(set) var unregisters = 0
+
+    func unregister() {
+        unregisters += 1
+        onPress = nil
+    }
 }
 
 /// Counts what was asked of the login item.
@@ -322,4 +327,19 @@ private final class Fixture {
     await fixture.apply(settings, errors: [ConfigError(reason: "couldn't be read")])
 
     #expect(fixture.announcements.isEmpty)
+}
+
+@MainActor @Test func aRefusedNewHotkeyLeavesTheOldOneWorking() async throws {
+    let fixture = Fixture()
+    var settings = Search.Settings()
+    await fixture.apply(settings)
+    fixture.hotKey.refusal = .refused(-9878)
+
+    settings.hotkey = KeyChord(.control, .k)
+    await fixture.apply(settings)
+
+    #expect(fixture.hotKey.unregisters == 0)
+    let press = try #require(fixture.hotKey.onPress)
+    press()
+    #expect(fixture.panel.isShown)
 }
