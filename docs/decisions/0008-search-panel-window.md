@@ -26,8 +26,16 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   dark appearance alone, so the panel reads the same color over a white window and a black one,
   as Spotlight's does. The clip keeps the window's shadow rounded, since the window server shapes
   it from the panel's pixels (Searcher 0087, "no window shadow around the glass").
-- **Place and size.** On the screen with the mouse, centered across it, its top 22% of the way
-  down the screen's frame. The height fits the rows and the top stays put as rows come and go,
+- **Place and size.** On the screen holding the frontmost app's frontmost window, where the
+  user is working, rather than the screen with the mouse. `FocusedScreen` finds it with
+  `CGWindowListCopyWindowInfo`: the first on-screen window at layer 0, not fully transparent,
+  owned by `NSWorkspace.frontmostApplication`, and the screen it overlaps most. It reads only
+  bounds, layer, alpha and owner, which need no Screen Recording permission, so no prompt
+  shows; window names would. With no such window (the desktop, an app with no windows open) it
+  is `NSScreen.main`, the screen with the menu bar's key focus. Finding it adds 0.22 ms median
+  and 0.39 ms p95 to a show (200 calls, 28 windows on 2 screens, release build); one call took
+  4.5 ms. Centered across the screen, its
+  top 22% of the way down the screen's frame. The height fits the rows and the top stays put as rows come and go,
   so the field doesn't jump while typing. The rows stop at the bottom of the screen's visible
   area: a short screen shows fewer rows rather than a panel that runs off it, so the selection
   never needs scrolling into view.

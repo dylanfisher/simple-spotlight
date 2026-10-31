@@ -115,14 +115,12 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     // MARK: Showing
 
-    /// Shows the panel on the screen with the mouse, the last query selected in the field.
+    /// Shows the panel on the screen with the frontmost app's frontmost window, the last query
+    /// selected in the field.
     public func show() {
-        // The mouse can sit on the edge between two screens, where no frame contains it.
-        let mouse = NSEvent.mouseLocation
-        guard
-            let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
-                ?? NSScreen.main
-        else { preconditionFailure("there is no screen to show the panel on") }
+        guard let screen = FocusedScreen.current() else {
+            preconditionFailure("there is no screen to show the panel on")
+        }
         show(onScreen: screen.frame, visible: screen.visibleFrame)
     }
 
