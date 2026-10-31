@@ -53,7 +53,7 @@ none. Write `/usr/bin/log`, since zsh's `log` is a builtin.
 | ID | Budget | Result |
 |---|---|---|
 | B1 | 50 ms | First show 20–31 ms (median 21, 13 launches); later shows median 6.4, p95 11.7, max 16.3 ms (57 shows). |
-| B2 | 16 ms | Model with usage ≤ 0.23 ms p95. Through the panel, with the rows laid out: median 1.9, p95 3.5 ms in a debug build (135 keystrokes). |
+| B2 | 16 ms | Model with usage and learned picks ≤ 0.24 ms p95 (2,000 items, 1,600 picks). Through the panel, with the rows laid out: median 1.9, p95 3.5 ms in a debug build (135 keystrokes). |
 | B3 | 300 ms | `launched` → hotkey registered 10–29 ms. `open` → registered median 127, p95 138 ms (49 launches). The first launch of a newly signed build took 233–322 ms (5 launches), all of the extra before the app's code runs. |
 | B4 | 200 ms | 32–41 ms, median 34 ms (49 launches). |
 | B5 | 40 MB | 18–19 MB. |

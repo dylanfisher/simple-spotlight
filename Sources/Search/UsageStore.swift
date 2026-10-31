@@ -1,3 +1,4 @@
+import Base
 import Foundation
 
 /// What the user has opened from the panel, which ranks the results
@@ -7,18 +8,43 @@ public actor UsageStore {
     /// Returns after the duration, or throws once cancelled.
     public typealias Sleep = @Sendable (Duration) async throws -> Void
 
-    /// The file's one shape: per item id, how often and how recently it was opened. A file that
-    /// doesn't decode is discarded, per the pre-release rule.
+    /// The file's one shape: per item id, how often and how recently it was opened, and from
+    /// which queries. A file that doesn't decode is discarded, per the pre-release rule.
     public struct Usage: Codable, Equatable, Sendable {
-        public struct Entry: Codable, Equatable, Sendable {
+        /// Some opens, as two numbers that give their decayed sum exactly.
+        public struct Opens: Codable, Equatable, Sendable {
             /// The opens as of `lastOpened`, each weighted by half for every
             /// `UsageBoost.halfLife` between it and `lastOpened`, so the last open counts 1.
             public var count: Double
             public var lastOpened: Date
 
+            public init(count: Double, lastOpened: Date) {
+                self.count = count
+                self.lastOpened = lastOpened
+            }
+
             /// The opens' weight at `now`.
             public func frecency(at now: Date) -> Double {
                 UsageBoost.decayed(count, over: now.timeIntervalSince(lastOpened))
+            }
+
+            /// `opens` with one more at `date`; one open when `opens` is nil.
+            static func adding(at date: Date, to opens: Opens?) -> Opens {
+                Opens(count: (opens?.frecency(at: date) ?? 0) + 1, lastOpened: date)
+            }
+        }
+
+        public struct Entry: Codable, Equatable, Sendable {
+            /// Every open of the item.
+            public var opens: Opens
+            /// The opens of the item from each query, keyed by `Usage.queryKey`: the picks the
+            /// ranking learns from (docs/decisions/0010-usage-ranking.md). At most
+            /// `UsageStore.queriesPerItem`.
+            public var queries: [String: Opens]
+
+            public init(opens: Opens, queries: [String: Opens] = [:]) {
+                self.opens = opens
+                self.queries = queries
             }
         }
 
@@ -29,15 +55,44 @@ public actor UsageStore {
             self.entries = entries
         }
 
-        /// Counts an open of the item with `id` at `date`.
-        public mutating func record(_ id: String, at date: Date) {
-            let earlier = entries[id]?.frecency(at: date) ?? 0
-            entries[id] = Entry(count: earlier + 1, lastOpened: date)
+        /// What a query is remembered and compared by: trimmed, folded as the matcher folds it,
+        /// and cut to `UsageStore.queryLength` characters.
+        public static func queryKey(_ query: String) -> String {
+            String(
+                FoldedText.fold(query.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .prefix(UsageStore.queryLength))
         }
 
-        /// Drops the entries whose frecency at `now` is below `UsageStore.forgetBelow`.
+        /// Counts an open of the item with `id` from `query` at `date`. When the item has more
+        /// than `UsageStore.queriesPerItem` queries, the ones with the lowest frecency go.
+        public mutating func record(_ id: String, query: String, at date: Date) {
+            let earlier = entries[id]
+            var queries = earlier?.queries ?? [:]
+            let key = Self.queryKey(query)
+            if !key.isEmpty {
+                queries[key] = Opens.adding(at: date, to: queries[key])
+            }
+            if queries.count > UsageStore.queriesPerItem {
+                let kept = Set(
+                    queries.map { ($0.key, $0.value.frecency(at: date)) }
+                        .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }
+                        .prefix(UsageStore.queriesPerItem).map(\.0))
+                queries = queries.filter { kept.contains($0.key) }
+            }
+            entries[id] = Entry(opens: .adding(at: date, to: earlier?.opens), queries: queries)
+        }
+
+        /// Drops the entries, and the queries of the entries kept, whose frecency at `now` is
+        /// below `UsageStore.forgetBelow`.
         mutating func forget(at now: Date) {
-            entries = entries.filter { $0.value.frecency(at: now) >= UsageStore.forgetBelow }
+            entries = entries.compactMapValues { entry in
+                guard entry.opens.frecency(at: now) >= UsageStore.forgetBelow else { return nil }
+                var kept = entry
+                kept.queries = entry.queries.filter {
+                    $0.value.frecency(at: now) >= UsageStore.forgetBelow
+                }
+                return kept
+            }
         }
     }
 
@@ -47,6 +102,11 @@ public actor UsageStore {
     /// the file to what was opened lately, including ids of apps since deleted, without the
     /// store knowing the index.
     public static let forgetBelow = 1.0 / 64
+    /// The most queries kept per item. A few cover the ways one person types an app's name.
+    public static let queriesPerItem = 8
+    /// The longest query kept, in characters. Longer ones are cut, and still compare by their
+    /// start, as the ranking compares queries by prefix.
+    public static let queryLength = 32
 
     public nonisolated let file: URL
     private let folder: URL
@@ -82,11 +142,11 @@ public actor UsageStore {
         return read
     }
 
-    /// Counts an open of the item with `id` at `date`, writes it after `writeDelay`, and returns
-    /// the usage with it.
-    public func record(_ id: String, at date: Date) throws -> Usage {
+    /// Counts an open of the item with `id` from `query` at `date`, writes it after
+    /// `writeDelay`, and returns the usage with it.
+    public func record(_ id: String, query: String, at date: Date) throws -> Usage {
         var updated = try contents()
-        updated.record(id, at: date)
+        updated.record(id, query: query, at: date)
         usage = updated
         unwritten = true
         if writing == nil {

@@ -45,7 +45,9 @@ private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
 /// Usage in which each title was opened its number of times just now, so its frecency is that
 /// number.
 private func usage(_ opens: [String: Double]) -> UsageBoost {
-    let entries = opens.mapValues { UsageStore.Usage.Entry(count: $0, lastOpened: now) }
+    let entries = opens.mapValues {
+        UsageStore.Usage.Entry(opens: .init(count: $0, lastOpened: now))
+    }
     return UsageBoost(
         UsageStore.Usage(
             entries: Dictionary(uniqueKeysWithValues: entries.map { ("app:\($0)", $1) })),
@@ -104,6 +106,59 @@ private func titles(_ query: String, _ names: [String], opens: [String: Double])
             == ["Xcode", "Color Draw Editor"])
 }
 
+/// Usage in which each title was picked once, just now, from each of its queries.
+private func picks(_ picked: [String: [String]]) -> UsageBoost {
+    var usage = UsageStore.Usage()
+    for (title, queries) in picked {
+        for query in queries { usage.record("app:\(title)", query: query, at: now) }
+    }
+    return UsageBoost(usage, at: now)
+}
+
+private func titles(_ query: String, _ names: [String], picked: [String: [String]]) -> [String] {
+    SearchIndex(items: names.map(app)).results(for: query, limit: 20, usage: picks(picked))
+        .map(\.item.title)
+}
+
+@Test func onePickForAQueryPutsTheItemFirstForIt() {
+    #expect(titles("c", ["Chess", "Google Chrome"]) == ["Chess", "Google Chrome"])
+    #expect(
+        titles("c", ["Chess", "Google Chrome"], picked: ["Google Chrome": ["c"]])
+            == ["Google Chrome", "Chess"])
+}
+
+/// A pick counts for a query that extends it, and for one it extends.
+@Test func aPickCountsForLongerAndShorterQueries() {
+    let names = ["Chess", "Google Chrome"]
+    #expect(titles("ch", names, picked: ["Google Chrome": ["c"]]) == ["Google Chrome", "Chess"])
+    #expect(titles("c", names, picked: ["Google Chrome": ["chr"]]) == ["Google Chrome", "Chess"])
+}
+
+/// "gc" neither starts "chr" nor starts with it, so Google Chrome's initials stay below an
+/// exact prefix.
+@Test func aPickForAnUnrelatedQueryDoesntCount() {
+    #expect(
+        titles("gc", ["GC Tool", "Google Chrome"], picked: ["Google Chrome": ["chr"]])
+            == ["GC Tool", "Google Chrome"])
+}
+
+@Test func aPickNeverMakesANonMatchMatch() {
+    #expect(titles("c", ["Safari", "Chess"], picked: ["Safari": ["c"]]) == ["Chess"])
+}
+
+@Test func learnedItemsRankByTheFrecencyOfTheirPicks() {
+    let names = ["Calendar", "Chess", "Google Chrome"]
+    let picked = ["Chess": ["c"], "Google Chrome": ["c", "ch"]]
+    #expect(titles("c", names, picked: picked) == ["Google Chrome", "Chess", "Calendar"])
+}
+
+/// Picks are compared folded and trimmed, as the matcher compares names.
+@Test func picksAreComparedFolded() {
+    #expect(
+        titles(" C ", ["Chess", "Google Chrome"], picked: ["Google Chrome": ["Ç"]])
+            == ["Google Chrome", "Chess"])
+}
+
 @Test func limitIsHonored() {
     let names = (0..<50).map { "Item \($0)" }
     #expect(titles("item", names, limit: 8).count == 8)
@@ -148,7 +203,8 @@ private let calculator = SearchItem(
 
 @Suite(.serialized) struct SearchIndexTiming {
     /// B2 gives a keystroke 16 ms; the model's part is bounded at 5x that so a debug build under
-    /// load doesn't flake. One item in ten has been opened, so usage is looked up and compared.
+    /// load doesn't flake. One item in ten has been opened, from the most queries an item keeps,
+    /// so usage and picks are looked up and compared.
     @Test func ranksFiveThousandItemsWithinBudget() {
         let words = ["alpha", "bravo", "Charlie", "delta", "Echo", "foxtrot", "golf", "Hotel"]
         let items = (0..<5_000).map { n in
@@ -157,7 +213,12 @@ private let calculator = SearchItem(
         let index = SearchIndex(items: items)
         var opened = UsageStore.Usage()
         for (n, item) in items.enumerated() where n % 10 == 0 {
-            opened.entries[item.id] = .init(count: Double(n % 7), lastOpened: now)
+            opened.entries[item.id] = .init(opens: .init(count: Double(n % 7), lastOpened: now))
+        }
+        // Every opened item picked from a full set of queries, some of them like "dec".
+        let queries = ["d", "de", "dec", "del", "e", "ec", "echo", "delta"]
+        for (n, item) in items.enumerated() where n % 10 == 0 {
+            for query in queries { opened.record(item.id, query: query, at: now) }
         }
         let boost = UsageBoost(opened, at: now)
         let clock = ContinuousClock()

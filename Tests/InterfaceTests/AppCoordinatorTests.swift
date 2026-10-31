@@ -498,6 +498,27 @@ private let maps = SearchItem(
     #expect(fixture.titles == ["Maps", "Mail"])
 }
 
+/// The user's report: typing "c" and opening Chrome should put Chrome first for "c" the next
+/// time, over Chess, after one pick.
+@MainActor @Test func oneOpenFromAQueryPutsTheItemFirstForItNextTime() async throws {
+    let chess = SearchItem(
+        id: "com.apple.Chess", kind: .app, title: "Chess", subtitle: nil,
+        target: .openFile(URL(filePath: "/System/Applications/Chess.app")))
+    let chrome = SearchItem(
+        id: "com.google.Chrome", kind: .app, title: "Google Chrome", subtitle: nil,
+        target: .openFile(URL(filePath: "/Applications/Google Chrome.app")))
+    let fixture = Fixture(items: [chess, chrome])
+    await fixture.apply(Search.Settings())
+    try fixture.type("c")
+    #expect(fixture.titles.prefix(2) == ["Chess", "Google Chrome"])
+
+    fixture.panel.open(row: 1)
+    await fixture.coordinator.usageUpdate?.value
+    try fixture.type("c")
+
+    #expect(fixture.titles.prefix(2) == ["Google Chrome", "Chess"])
+}
+
 @MainActor @Test func usageIsKeptAcrossLaunches() async throws {
     let first = Fixture(items: [mail, maps])
     await first.apply(Search.Settings())

@@ -92,7 +92,7 @@ public final class AppCoordinator {
             index: SearchIndex(items: commands.items), settings: Search.Settings(),
             calculator: calculator, opener: opener, icons: icons, configFile: makeConfigFile,
             runCommand: { [weak self] in self?.run(command: $0) },
-            recordOpen: { [weak self] in self?.recordOpen($0) }, now: now, quit: quit,
+            recordOpen: { [weak self] in self?.recordOpen($0, query: $1) }, now: now, quit: quit,
             reportError: reportError, ordersPanel: ordersPanel)
         updateUsage { usage in try await usage.load(at: now()) }
     }
@@ -289,9 +289,9 @@ public final class AppCoordinator {
         panel.leadingItems = rows
     }
 
-    private func recordOpen(_ id: String) {
+    private func recordOpen(_ id: String, query: String) {
         let date = now()
-        updateUsage { usage in try await usage.record(id, at: date) }
+        updateUsage { usage in try await usage.record(id, query: query, at: date) }
     }
 
     /// Runs `change` on the usage store after the change started before it, and gives the

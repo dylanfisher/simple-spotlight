@@ -1,4 +1,4 @@
-# 0010. Usage ranking: frecency that lifts a match one kind at most
+# 0010. Usage ranking: picks learned per query, and frecency that lifts a match one kind at most
 
 - **Date:** 2026-10-31
 - **Status:** accepted
@@ -11,15 +11,29 @@ two-week half-life. Decision 0002 put that lift in `SearchIndex`'s ordering and 
 free of usage. The order is a sort comparator, so it must stay a strict weak order: a pairwise
 rule such as "a used item beats a better kind when it was used much more" isn't transitive.
 
+After first use the user asked for more: typing "c" and opening Chrome should put Chrome first
+for "c" the next time, over Chess, after one pick. Frecency alone can't do that: one open breaks
+ties within a kind, and Chess is a better kind of match for "c" than "Google Chrome".
+
 ## Decision
 
+- **Learned picks.** With each open, the store keeps the query it was opened from, as
+  `UsageStore.Usage.queryKey` gives it (trimmed, folded as the matcher folds names, cut to
+  `UsageStore.queryLength` characters), and that query's own count and last-opened date. An item
+  is learned for the current query q when it was picked for a q′ that starts with q or that q
+  starts with, so a pick for "c" counts for "ch", and one for "chr" counts for "c". Learned
+  matches rank above every other match, by the summed frecency of those picks, then in the
+  order below. Only matches are ranked, so a pick never makes a non-match appear. The sum is
+  worked out once per keystroke (`UsageBoost.learned(for:)`), so each item has one key per
+  query and the comparator stays a strict weak order.
 - **Frecency.** Each open counts 1 and halves every `UsageBoost.halfLife`, chosen at two weeks.
   The file stores, per item id, the count as of the last open with older opens already decayed,
-  and the last-opened date: two numbers that give the exact sum over every open. `UsageBoost`
+  and the last-opened date: two numbers that give the exact sum over every open. Each query an
+  item was opened from keeps the same two numbers. `UsageBoost`
   works the frecencies out when the panel shows; a keystroke looks them up and never touches the
   actor or the disk.
-- **Lift as a level.** An item whose frecency reaches `UsageBoost.liftingFrecency` (3 at the
-  time: a few opens in a day) is lifted, and its level is its kind plus one. Ranking by level
+- **Lift as a level.** Below the learned matches, an item whose frecency reaches
+  `UsageBoost.liftingFrecency` (3: a few opens in a day) is lifted, and its level is its kind plus one. Ranking by level
   turns "lift by one kind at most" into a key each item has on its own, which keeps the
   comparator a strict weak order; `SearchIndex.precedes` gives the full order. A lifted item
   passes the unlifted matches one kind better and never a kind two better, and only matches are
@@ -29,9 +43,19 @@ rule such as "a used item beats a better kind when it was used much more" isn't 
   aren't recorded: a used "Quit Simple Spotlight" would rise above "QuickTime Player" for "q".
   Revealing in Finder isn't an open of the item. A launch that fails afterwards still counts;
   the workspace reports that later, and it is rare.
-- **Pruning by decay.** Loading drops entries whose frecency is below `UsageStore.forgetBelow`,
-  chosen as one open six half-lives ago. That bounds the file to what was opened lately,
-  including ids of deleted apps, without the store knowing the index.
+- **The lift stays at 3.** Learned picks now cover the queries the user has typed before, and
+  any query a past one starts or extends. The lift is left for the rest, such as "fari" after
+  picks for "saf", where usage that isn't tied to the query should move an item only on
+  repeated use, and only by one kind. Lowering it would let one open from an unrelated query
+  pass better matches; raising it would make it rarely matter. Neither had a case for it.
+- **Pruning by decay and by count.** Loading drops entries whose frecency is below
+  `UsageStore.forgetBelow`, chosen as one open six half-lives ago, and the queries of the
+  entries kept that are below it too. That bounds the file to what was opened lately, including
+  ids of deleted apps, without the store knowing the index. Each item keeps at most
+  `UsageStore.queriesPerItem` (8) queries; recording a ninth drops the one with the lowest
+  frecency.
+- **One shape.** Adding the queries changed the file's shape. Per the pre-release rule, a file
+  of the old shape doesn't decode and is discarded, as any file that doesn't decode is.
 - **Writes.** `UsageStore` is an actor that writes a burst of opens once, after
   `UsageStore.writeDelay`, and the app writes what is left before it quits.
 
@@ -50,10 +74,24 @@ rule such as "a used item beats a better kind when it was used much more" isn't 
 - **Pruning ids missing from the index** — rejected: an app on an ejected drive would lose its
   history while the drive is out.
 
+- **Only an exact query is learned** — rejected: typing "ch" after a pick for "c", or "c" after
+  one for "chr", wouldn't find the pick, and people don't type a name the same way every time.
+- **Learned picks as one more level of lift** — rejected: the user asked for the picked item
+  first, and a lift capped at one kind wouldn't pass Chess's exact prefix.
+
 ## Consequences
+
+A pick for a short query reaches far: a pick of Chrome for "c" also counts for "co", where
+Chrome matches as a subsequence and so ranks above "Code" until Code is picked for "co" more
+than Chrome was for "c". That follows from counting picks for longer queries; if it gets in the
+way, count a pick for q′ only when q′ is at least as long as q, or weigh picks by how much of q
+they cover.
 
 A few opens in a day move an app above an unused better match, and the lift wears off after a
 few weeks without use. If it feels too eager or too slow, change the constants in `UsageBoost`.
 Per keystroke, usage costs a dictionary
 lookup per matching item: for 2,000 items, a one-letter query that matches all of them went from
-0.15 ms to 0.23 ms (median of 200 runs, release build).
+0.15 ms to 0.23 ms (median of 200 runs, release build). With learned picks, a keystroke also
+compares the query with every pick: for 2,000 items, 200 of them picked from 8 queries each,
+the slowest query measured took 0.22 ms median and 0.24 ms p95 (200 runs, release build),
+against 0.14 and 0.16 ms with no usage.

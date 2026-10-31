@@ -20,9 +20,11 @@ public struct SearchIndex: Sendable {
 
     /// The `limit` best matches for `query`, best first. An empty query matches nothing.
     ///
-    /// `usage` gives each item's frecency; `precedes` says where it counts.
+    /// `usage` gives each item's frecency and its picks for the query; `precedes` says where
+    /// they count.
     public func results(for query: String, limit: Int, usage: UsageBoost = .none) -> [Result] {
         precondition(limit >= 0, "a negative limit \(limit)")
+        let learned = usage.learned(for: query)
         let query = FuzzyMatch.Query(query)
         guard limit > 0, !query.isEmpty else { return [] }
         // Kept sorted best first. A binary insertion into at most `limit` entries is cheaper than
@@ -32,7 +34,9 @@ public struct SearchIndex: Sendable {
         for (index, item) in items.enumerated() {
             guard let (score, byTitle) = Self.score(query, item) else { continue }
             let ranked = Ranked(
-                score: score, byTitle: byTitle, frecency: usage.frecency(of: item.id), index: index)
+                score: score, byTitle: byTitle,
+                learned: learned.isEmpty ? 0 : learned[item.id, default: 0],
+                frecency: usage.frecency(of: item.id), index: index)
             if top.count == limit, let last = top.last, !precedes(ranked, last) { continue }
             var low = 0
             var high = top.count
@@ -58,6 +62,9 @@ public struct SearchIndex: Sendable {
         let score: FuzzyMatch.Score
         /// Whether the title gave the score, rather than an alternate name.
         let byTitle: Bool
+        /// The frecency of the item's picks for the query, from `UsageBoost.learned(for:)`; 0
+        /// when it wasn't picked for a query like it.
+        let learned: Double
         let frecency: Double
         let index: Int
 
@@ -81,21 +88,28 @@ public struct SearchIndex: Sendable {
 
     /// Whether `a` ranks before `b`.
     ///
-    /// An item is lifted when its frecency reaches `UsageBoost.liftingFrecency`. Its level is its
-    /// kind of match, one higher when lifted, so a lifted subsequence has the level of initials
-    /// and a lifted exact prefix a level of its own above every other. In order:
+    /// An item is learned for the query when it was opened from a query that starts with this
+    /// one or that this one starts with, so a single pick of Chrome for "c" puts it first for
+    /// "c" and "ch" again. An item is lifted when its frecency reaches
+    /// `UsageBoost.liftingFrecency`. Its level is its kind of match, one higher when lifted, so a
+    /// lifted subsequence has the level of initials and a lifted exact prefix a level of its own
+    /// above every other. In order:
     ///
-    /// 1. The higher level.
-    /// 2. Within a level, a lifted item before one that isn't. The lifted items of a level are
+    /// 1. The higher frecency of the picks for the query, so learned items come before every
+    ///    other match, the most picked first.
+    /// 2. The higher level.
+    /// 3. Within a level, a lifted item before one that isn't. The lifted items of a level are
     ///    the kind below its unlifted ones, so a much-used item passes the matches one kind
     ///    better that aren't, and never a kind two better: those are a level above it at least.
-    /// 3. The higher subsequence quality, as items of a level and lift have the same kind.
-    /// 4. The higher frecency, so usage short of the lift breaks ties within a kind.
-    /// 5. The shorter folded title, then the folded titles' byte order, then the id.
+    /// 4. The higher subsequence quality, as items of a level and lift have the same kind.
+    /// 5. The higher frecency, so usage short of the lift breaks ties within a kind.
+    /// 6. The shorter folded title, then the folded titles' byte order, then the id.
     ///
-    /// Items that tie on all of these, as duplicates do, keep the order they have in `items`.
-    /// Usage only orders matches: an item the query doesn't match isn't ranked at all.
+    /// Each of these is a key the item has on its own for the query, so the order is a strict
+    /// weak order. Items that tie on all of them, as duplicates do, keep the order they have in
+    /// `items`. Usage only orders matches: an item the query doesn't match isn't ranked at all.
     private func precedes(_ a: Ranked, _ b: Ranked) -> Bool {
+        if a.learned != b.learned { return a.learned > b.learned }
         if a.level != b.level { return a.level > b.level }
         if a.lifted != b.lifted { return a.lifted }
         if a.score.quality != b.score.quality { return a.score.quality > b.score.quality }

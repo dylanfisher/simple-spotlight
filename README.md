@@ -33,7 +33,8 @@ Set `"launchAtLogin": true` to start the app at login. It registers the app wher
 launch it from where it will stay. If macOS asks for approval, a row in the panel opens Login
 Items.
 
-The app keeps what you open, to rank it higher, in
+The app keeps what you open and what you typed to find it, so the next search like it puts
+that first, in
 `~/Library/Application Support/simple-spotlight/usage.json`, and the hotkey conflicts it has
 told you about in `state.json` beside it. Deleting either resets it.
 

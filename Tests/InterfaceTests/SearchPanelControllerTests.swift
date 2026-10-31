@@ -43,14 +43,20 @@ private let quitItem = SearchItem(
     target: .command("quit"))
 private let configURL = URL(filePath: "/tmp/simple-spotlight-test/config.json")
 
+/// An open the controller counted.
+private struct Recorded: Equatable {
+    let id: String
+    let query: String
+}
+
 /// A controller over a few items whose panel is never ordered on screen, with what it opened,
 /// ran, quit and reported recorded.
 @MainActor
 private final class Fixture {
     let opener = StubOpener()
     var commands: [String] = []
-    /// The ids the controller counted as opened.
-    var recorded: [String] = []
+    /// The ids the controller counted as opened, each with the query it was opened from.
+    var recorded: [Recorded] = []
     var now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     var quits = 0
     var errors: [String] = []
@@ -66,7 +72,7 @@ private final class Fixture {
             opener: opener, icons: IconCache(load: { _ in NSImage() }),
             configFile: { [unowned self] () throws(ConfigError) in try configResult.get() },
             runCommand: { [unowned self] in commands.append($0) },
-            recordOpen: { [unowned self] in recorded.append($0) },
+            recordOpen: { [unowned self] in recorded.append(Recorded(id: $0, query: $1)) },
             now: { [unowned self] in now },
             quit: { [unowned self] in quits += 1 },
             reportError: { [unowned self] in errors.append(String(describing: $0)) },
@@ -246,7 +252,7 @@ extension Fixture {
 
     #expect(fixture.opener.calls == [.application(URL(filePath: "/Applications/Safari.app"))])
     #expect(!fixture.controller.isShown)
-    #expect(fixture.recorded == ["com.apple.Safari"])
+    #expect(fixture.recorded == [Recorded(id: "com.apple.Safari", query: "saf")])
 }
 
 @MainActor @Test func returnOpensASettingsPaneByItsURL() throws {
@@ -256,7 +262,7 @@ extension Fixture {
     try fixture.press("\r", keyCode: 36)
 
     #expect(fixture.opener.calls == [.open(bluetoothURL)])
-    #expect(fixture.recorded == ["com.apple.BluetoothSettings"])
+    #expect(fixture.recorded == [Recorded(id: "com.apple.BluetoothSettings", query: "bluetooth")])
 }
 
 /// A calculator answer, a command and a problem aren't things the user opens, so they don't
@@ -290,14 +296,14 @@ extension Fixture {
 @MainActor @Test func usageRanksTheResults() throws {
     let fixture = Fixture()
     var usage = UsageStore.Usage()
-    usage.record("com.microsoft.scanner", at: fixture.now)
+    usage.record("com.microsoft.scanner", query: "scanner", at: fixture.now)
     fixture.controller.usage = usage
 
     try fixture.type("saf")
 
     #expect(fixture.titles == ["Safari", "Microsoft Safety Scanner"])
     for _ in 1..<Int(UsageBoost.liftingFrecency) {
-        usage.record("com.microsoft.scanner", at: fixture.now)
+        usage.record("com.microsoft.scanner", query: "scanner", at: fixture.now)
     }
     fixture.controller.usage = usage
     #expect(fixture.titles == ["Microsoft Safety Scanner", "Safari"])
@@ -308,7 +314,7 @@ extension Fixture {
     let fixture = Fixture()
     var usage = UsageStore.Usage()
     for _ in 0..<Int(UsageBoost.liftingFrecency) {
-        usage.record("com.microsoft.scanner", at: fixture.now)
+        usage.record("com.microsoft.scanner", query: "scanner", at: fixture.now)
     }
     fixture.controller.usage = usage
     try fixture.type("saf")

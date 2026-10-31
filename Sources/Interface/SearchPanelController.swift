@@ -60,7 +60,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private var boost = UsageBoost.none
     private let calculator: CalculatorProvider
     private let opener: any ResultOpener
-    private let recordOpen: @MainActor (String) -> Void
+    private let recordOpen: @MainActor (_ id: String, _ query: String) -> Void
     private let now: @MainActor () -> Date
     private let configFile: @MainActor () async throws(ConfigError) -> URL
     private let runCommand: @MainActor (String) -> Void
@@ -72,8 +72,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     ///   - configFile: Gives the config file, creating the default one if it's missing, as
     ///     `ConfigStore.makeDefaultFileIfMissing` does.
     ///   - runCommand: Runs a `.command` row's identifier.
-    ///   - recordOpen: Told the id of each app or System Settings pane opened, to count it in
-    ///     `usage`.
+    ///   - recordOpen: Told the id of each app or System Settings pane opened, and the query
+    ///     it was opened from, to count it in `usage`.
     ///   - now: The time `usage` decays to when the panel shows.
     ///   - quit: Runs on ⌘Q.
     ///   - reportError: Told when the config file can't be made.
@@ -84,7 +84,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         opener: any ResultOpener, icons: IconCache,
         configFile: @escaping @MainActor () async throws(ConfigError) -> URL,
         runCommand: @escaping @MainActor (String) -> Void,
-        recordOpen: @escaping @MainActor (String) -> Void,
+        recordOpen: @escaping @MainActor (_ id: String, _ query: String) -> Void,
         now: @escaping @MainActor () -> Date,
         quit: @escaping @MainActor () -> Void,
         reportError: @escaping @MainActor (any Error) -> Void,
@@ -250,7 +250,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         guard state.rows.indices.contains(index) else { return }
         let item = state.rows[index].item
         hide()
-        if item.kind == .app || item.kind == .settingsPane { recordOpen(item.id) }
+        if item.kind == .app || item.kind == .settingsPane { recordOpen(item.id, query) }
         switch item.target {
         case .openFile(let url) where item.kind == .app:
             opener.openApplication(at: url)
