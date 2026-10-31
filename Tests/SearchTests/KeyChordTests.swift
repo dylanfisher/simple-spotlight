@@ -103,3 +103,13 @@ func refusesABadChord(text: String, reason: String) {
     #expect(throws: KeyChord.ParseError.self) { try KeyChord(checking: [], .k) }
     #expect(throws: KeyChord.ParseError.self) { try KeyChord(checking: .shift, .k) }
 }
+
+@Test func refusesTheStandardAppCommands() throws {
+    for key in [KeyChord.Key.w, .q, .comma, .h, .m, .c, .x, .v, .a] {
+        #expect(throws: KeyChord.ParseError.self) { try KeyChord(checking: .command, key) }
+        #expect(throws: KeyChord.ParseError.self) { try KeyChord(parsing: "cmd+\(key.rawValue)") }
+    }
+    // With another modifier they are different chords.
+    #expect(try KeyChord(checking: [.command, .shift], .w) == KeyChord([.command, .shift], .w))
+    #expect(try KeyChord(checking: [.command, .option], .q) == KeyChord([.command, .option], .q))
+}

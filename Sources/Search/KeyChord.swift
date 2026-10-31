@@ -219,7 +219,8 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
     }
 
     /// `key` with `modifiers`, as a shortcut recorder sees them pressed, when the config file
-    /// would take the chord: a key that isn't an F-key needs a modifier other than shift alone.
+    /// would take the chord: a key that isn't an F-key needs a modifier other than shift alone,
+    /// and Command alone can't be a standard command's key.
     public init(checking modifiers: Modifiers, _ key: Key) throws(ParseError) {
         if !key.isFunctionKey {
             let range = Key.functionKeyRange
@@ -232,8 +233,17 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
                         + " used with shift alone")
             }
         }
+        if modifiers == .command, Self.standardCommands.contains(key) {
+            throw ParseError(
+                reason: "every app uses it for a standard command, which a global shortcut"
+                    + " would take away")
+        }
         self.init(modifiers, key)
     }
+
+    /// The keys that with Command alone are the standard commands: close, quit, settings, hide,
+    /// minimize, copy, cut, paste and select all.
+    private static let standardCommands: Set<Key> = [.w, .q, .comma, .h, .m, .c, .x, .v, .a]
 
     /// The chord as the config file spells it: "ctrl+shift+k", modifiers in `Modifiers.named`'s
     /// order.

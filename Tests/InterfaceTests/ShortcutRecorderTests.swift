@@ -102,3 +102,17 @@ private final class Fixture {
     #expect(flags.intersection(.chordKeys) == [.command, .shift, .option, .control])
     #expect(NSEvent.ModifierFlags.capsLock.chordModifiers.isEmpty)
 }
+
+@MainActor @Test func aStandardAppCommandIsRefusedAndKeepsListening() throws {
+    let fixture = Fixture()
+    fixture.recorder.start()
+
+    for key in [KeyChord.Key.w, .q, .comma] {
+        #expect(try fixture.press(key, .command))
+        #expect(fixture.recorder.isRecording)
+        #expect(
+            fixture.recorder.refusal?.hasPrefix("\(KeyChord(.command, key)) can't be the shortcut:")
+                == true)
+    }
+    #expect(fixture.recorded.isEmpty)
+}
