@@ -369,3 +369,8 @@ private func isLink(_ url: URL) throws -> Bool {
     let state = await next(from: store) { $0.settings.maxResults == 9 }
     #expect(state == ConfigStore.State(settings: settings(maxResults: 9), errors: []))
 }
+
+@Test func placesItsFolderInDotConfig() {
+    let home = URL(filePath: "/Users/test", directoryHint: .isDirectory)
+    #expect(ConfigStore.standardFolder(home: home).path == "/Users/test/.config/simple-spotlight")
+}

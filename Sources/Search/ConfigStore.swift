@@ -46,7 +46,7 @@ public actor ConfigStore {
     public static func standardFolder(
         home: URL = HomePath.current
     ) -> URL {
-        HomePath.folder("~/.config/simple-spotlight", home: home)
+        HomePath.folder("~/.config/\(AppSlug.value)", home: home)
     }
 
     public nonisolated let folder: URL

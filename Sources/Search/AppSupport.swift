@@ -5,6 +5,6 @@ import Foundation
 public enum AppSupport {
     /// The app's folder in Application Support for the user whose home folder is `home`.
     public static func standardFolder(home: URL = HomePath.current) -> URL {
-        HomePath.folder("~/Library/Application Support/simple-spotlight", home: home)
+        HomePath.folder("~/Library/Application Support/\(AppSlug.value)", home: home)
     }
 }

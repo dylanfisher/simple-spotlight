@@ -40,7 +40,7 @@ public struct SearchItem: Sendable, Identifiable {
     /// The id of a row the app makes itself, such as a command or a problem, in a namespace
     /// no bundle ID or path uses.
     public static func builtInID(_ name: String) -> String {
-        "simple-spotlight.\(name)"
+        "\(AppSlug.value).\(name)"
     }
 
     public init(
