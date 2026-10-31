@@ -1,0 +1,79 @@
+# 0008. The search panel: a non-activating borderless panel, an AppKit field over SwiftUI rows
+
+- **Date:** 2026-10-31
+- **Status:** accepted
+
+## Context
+
+P5 puts the search on screen. The app is an accessory (no Dock icon, no menu bar), so the panel
+has to take typing while another app stays frontmost, show over full-screen apps and every
+space, and hide when the user clicks away. B1 gives 50 ms from the hotkey to a visible panel with
+the field focused, and B2 16 ms from a keystroke to new rows. AGENTS.md asks for AppKit for the
+panel and SwiftUI for the views inside it, and tests must never show a window or take focus.
+Searcher's palette (its 0087) solved the look and the key handling for a similar panel.
+
+## Decision
+
+- **Window.** `SearchPanel` is an `NSPanel` with `[.borderless, .nonactivatingPanel]`, floating
+  level, `[.canJoinAllSpaces, .fullScreenAuxiliary]`, `canBecomeKey` true and `canBecomeMain`
+  false. Non-activating means it becomes key and gets the keystrokes without bringing the app
+  forward, so the app the user was in stays active and gets the keys back on hide. It hides when
+  it resigns key (a click elsewhere, another app forward), not on app deactivation, since the
+  app is rarely active. No open or close animation.
+- **Look.** Searcher's recipe after its fixes: a view clipped to a 16 pt rounded rectangle holding
+  the backdrop and a hairline edge (white at 60% in light, 20% in dark). The backdrop is
+  `NSGlassEffectView` from macOS 26 and an `NSVisualEffectView` (`.popover`, behind window,
+  always active) before it; both follow light and dark appearance. The clip keeps the window's
+  shadow rounded: unclipped, the glass draws a faint fill over its whole rectangle while key,
+  which shows as a square around the panel (Searcher 0087, "no window shadow around the glass").
+- **Place and size.** On the screen with the mouse, centered across it, its top 22% of the way
+  down the screen's frame. The height fits the rows and the top stays put as rows come and go,
+  so the field doesn't jump while typing.
+- **The field is AppKit; the rows are SwiftUI.** An `NSTextField` gets the keys from
+  `makeFirstResponder` in the same pass as the show, and its editor's commands (`moveUp:`,
+  `moveDown:` with their Ctrl-P/Ctrl-N bindings, `insertNewline:`, `cancelOperation:`) arrive
+  through its delegate. The rows (`SearchView`, `ResultRow`) are SwiftUI in an `NSHostingView`,
+  observing a `SearchState` the controller sets.
+- **Command chords in the panel.** With no menu bar, no Command chord reaches anything unless the
+  key window takes it, so `SearchPanel.performKeyEquivalent` offers each to the controller first:
+  ⌘Return, ⌘1…⌘9, ⌘, and ⌘Q, plus ⌘X, ⌘C, ⌘V and ⌘A passed to the field's editor, which would
+  otherwise not work. ⌘C copies the field's selected text when there is some, else a selected
+  calculator row's answer, else nothing. Undo is not wired.
+- **Search on the main actor.** A keystroke runs `CalculatorProvider` and
+  `SearchIndex.results` on the main actor; the index measured about 0.15 ms for 2,000 items in a
+  release build, so a hop off and back would cost more than it saves.
+- **Icons are drawn off the main actor.** `NSWorkspace.icon(forFile:)` returns an image that
+  reads the file's icon resources when first drawn, so `IconCache.render` draws it into a 64-pixel
+  bitmap (32 pt at 2x) off the main actor, and the rows draw only that bitmap. Icons are cached
+  by path; a row shows a rounded placeholder until its icon lands. Every settings pane, a
+  `.prefPane` included, shows the System Settings app's icon; calculator and command rows show
+  system symbols.
+- **Seams for P6.** The controller takes the index, settings, `leadingItems` (rows such as a
+  config error, shown first and counted in `maxResults`), a `ResultOpener` (the workspace in the
+  app, a recorder in tests), the config file's maker for ⌘,, a handler for `.command` rows, the
+  quit action for ⌘Q and an error reporter. Setting the index or settings searches again,
+  keeping the query and the selected item.
+- **Tests never order the panel in.** `ordersPanel: false` makes `show` give the field the keys in
+  code without putting the panel on screen. Tests send key events to the field's editor and
+  Command chords to `performKeyEquivalent`, as AppKit would.
+
+## Alternatives considered
+
+- **A SwiftUI `TextField`** — rejected: its focus comes through `@FocusState` after the view is
+  laid out in a key window, later than B1 allows and not at all in a panel that is never shown,
+  and its key handling (`onKeyPress`) also needs a focused, on-screen view, so the tests would
+  have to show a window.
+- **An activating panel (`NSApp.activate` on show)** — rejected: it takes the frontmost app's
+  active state, which then has to be handed back on hide, and the menu bar would switch to the
+  app's empty one while the panel shows.
+- **`NSWorkspace.icon(forFile:)` on the main actor, drawn as it comes** — rejected: it reads the
+  disk the first time each icon draws, which AGENTS.md rules out on the main thread.
+- **A visual effect view on macOS 26 too, as the plan says** — rejected for the system's own
+  glass, which is what Spotlight uses there; the blur stays as the macOS 15 path.
+
+## Consequences
+
+The keystroke path is the field's delegate, the calculator, the index and a SwiftUI update; B1
+and B2 are measured by hand at the end of P6, when the hotkey shows the panel. What tests can't
+see: the look, the click on a row (a SwiftUI tap gesture), the panel over a full-screen app, and
+the frontmost app keeping its active state while the panel takes typing.

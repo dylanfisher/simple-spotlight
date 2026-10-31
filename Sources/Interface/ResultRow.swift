@@ -1,0 +1,105 @@
+import AppKit
+import Search
+import SwiftUI
+
+/// One result: its icon, its title with the matched characters bold, and its subtitle.
+struct ResultRow: View {
+    /// What a row's icon shows.
+    enum Icon: Equatable {
+        /// The Finder icon of the file at the path, loaded by `IconCache`.
+        case file(String)
+        /// A system symbol.
+        case symbol(String)
+    }
+
+    nonisolated static let height: CGFloat = 44
+    nonisolated static let iconSize: CGFloat = 32
+
+    let row: SearchState.Row
+    /// The loaded icon for a `.file` icon; nil until it loads.
+    let image: NSImage?
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            iconView
+                .frame(width: Self.iconSize, height: Self.iconSize)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(Self.title(row.item.title, bold: row.ranges))
+                    .font(.system(size: 15))
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+                if let subtitle = row.item.subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(
+                            isSelected
+                                ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                }
+            }
+            .lineLimit(1)
+            .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: Self.height)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8).fill(Color.accentColor)
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        switch Self.icon(for: row.item) {
+        case .file:
+            if let image {
+                Image(nsImage: image)
+            } else {
+                RoundedRectangle(cornerRadius: 7).fill(.quaternary)
+                    .padding(2)
+            }
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: 20))
+                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+        }
+    }
+
+    /// The icon of `item`'s row. Every settings pane shows the System Settings app's, as
+    /// Spotlight's do.
+    nonisolated static func icon(for item: SearchItem) -> Icon {
+        switch item.kind {
+        case .settingsPane:
+            return .file(SettingsPaneProvider.systemSettingsApp.path(percentEncoded: false))
+        case .calculation:
+            return .symbol("plus.forwardslash.minus")
+        case .command:
+            return .symbol("gearshape")
+        case .app:
+            guard case .openFile(let url) = item.target else {
+                preconditionFailure("the app \(item.id) has no file to open")
+            }
+            return .file(url.path(percentEncoded: false))
+        }
+    }
+
+    /// `title` with the characters in `bold` strongly emphasized, which `Text` draws bold.
+    nonisolated static func title(_ title: String, bold: [Range<String.Index>]) -> AttributedString
+    {
+        var shown = AttributedString()
+        var rest = title.startIndex
+        for range in bold.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            shown += AttributedString(title[rest..<range.lowerBound])
+            var matched = AttributedString(title[range])
+            matched.inlinePresentationIntent = .stronglyEmphasized
+            shown += matched
+            rest = range.upperBound
+        }
+        shown += AttributedString(title[rest...])
+        return shown
+    }
+}
