@@ -57,3 +57,48 @@ private func model() -> SettingsModel {
     #expect(view.fittingSize.width == SettingsView.width)
     #expect(view.fittingSize.height > 0)
 }
+
+@MainActor
+private final class KeyWindow: NSObject, NSWindowDelegate {
+    let window: SettingsWindow
+    var quits = 0
+    var closes = 0
+
+    override init() {
+        _ = NSApplication.shared
+        window = SettingsWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+            styleMask: [.titled, .closable], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        super.init()
+        window.quit = { [unowned self] in quits += 1 }
+        window.delegate = self
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        closes += 1
+    }
+
+    func command(_ characters: String, keyCode: UInt16) throws -> Bool {
+        window.performKeyEquivalent(
+            with: try keyEvent(characters, modifiers: .command, keyCode: keyCode))
+    }
+}
+
+@MainActor @Test func commandWAndQCloseAndQuitOnALatinLayout() throws {
+    let keys = KeyWindow()
+
+    #expect(try keys.command("w", keyCode: 13))
+    #expect(keys.closes == 1)
+    #expect(try keys.command("q", keyCode: 12))
+    #expect(keys.quits == 1)
+}
+
+@MainActor @Test func commandWAndQCloseAndQuitOnACyrillicLayout() throws {
+    let keys = KeyWindow()
+
+    #expect(try keys.command("ц", keyCode: 13))
+    #expect(keys.closes == 1)
+    #expect(try keys.command("й", keyCode: 12))
+    #expect(keys.quits == 1)
+}

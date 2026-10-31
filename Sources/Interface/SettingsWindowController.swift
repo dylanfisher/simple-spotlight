@@ -77,16 +77,19 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
 
 /// The window, which takes ⌘W and ⌘Q itself, since the app has no menu bar to.
 @MainActor
-private final class SettingsWindow: NSWindow {
+final class SettingsWindow: NSWindow {
     var quit: @MainActor () -> Void = {}
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.chordKeys)
-        guard modifiers == .command else { return super.performKeyEquivalent(with: event) }
-        switch event.charactersIgnoringModifiers?.lowercased() {
-        case "w":
+        guard modifiers == .command,
+            let chord = SearchPanelController.chord(
+                characters: event.charactersIgnoringModifiers, keyCode: event.keyCode)
+        else { return super.performKeyEquivalent(with: event) }
+        switch chord {
+        case .close:
             performClose(nil)
-        case "q":
+        case .quit:
             quit()
         default:
             return super.performKeyEquivalent(with: event)

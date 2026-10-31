@@ -471,7 +471,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// The Command chords the panel takes, and what each does.
     enum Chord: Equatable {
-        case reveal, openSettings, quit, copy, cut, paste, selectAll
+        case reveal, openSettings, quit, close, copy, cut, paste, selectAll
         /// Opens the row at this index.
         case row(Int)
     }
@@ -484,7 +484,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// layout and the key that types it on a US one.
     private static let namedChords: [(character: String, key: KeyChord.Key, chord: Chord)] = [
         ("c", .c, .copy), ("x", .x, .cut), ("v", .v, .paste), ("a", .a, .selectAll),
-        ("q", .q, .quit), (",", .comma, .openSettings),
+        ("q", .q, .quit), ("w", .w, .close), (",", .comma, .openSettings),
     ]
     private static let digitKeys: [KeyChord.Key] = [
         .digit1, .digit2, .digit3, .digit4, .digit5, .digit6, .digit7, .digit8, .digit9,
@@ -516,6 +516,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
                 characters: event.charactersIgnoringModifiers, keyCode: event.keyCode)
         else { return false }
         switch chord {
+        case .close:
+            // The panel hides on Esc; ⌘W is for the settings window.
+            return false
         case .reveal:
             revealSelected()
         case .openSettings:
