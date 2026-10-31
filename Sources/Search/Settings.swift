@@ -83,10 +83,7 @@ extension Settings {
             "Show the answer when the search is arithmetic, such as 2*(3+4).")
         static let appFolders = Key(
             \.appFolders, "appFolders", .folders,
-            default: [
-                "/Applications", "/System/Applications",
-                "/System/Library/CoreServices/Applications", AppProvider.userApplications,
-            ],
+            default: AppProvider.standardFolders,
             "Folders searched for apps, two levels deep. ~ stands for your home folder.")
         static let excludedApps = Key(
             \.excludedApps, "excludedApps", .identifiers, default: [],

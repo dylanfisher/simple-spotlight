@@ -11,6 +11,14 @@ public struct AppProvider: Sendable {
     /// have one.
     public static let userApplications = "~/Applications"
 
+    /// The folders macOS and installers put apps in, as the config file writes them: the
+    /// default `appFolders`. An app in one of them, in its `Utilities` folder, or Finder, shows
+    /// no path, since the path would say nothing.
+    public static let standardFolders = [
+        "/Applications", "/System/Applications", "/System/Library/CoreServices/Applications",
+        userApplications,
+    ]
+
     /// Scanned in order, each to a depth of two, so `/Applications/Utilities/*.app` is found.
     public let folders: [URL]
     /// Picks the localization each app's name is read in, as `Locale.preferredLanguages` does.
@@ -23,6 +31,9 @@ public struct AppProvider: Sendable {
     public let extraApps: [URL]
     /// The user's home folder, where `userApplications` is.
     public let home: URL
+    /// The paths of the folders whose apps show no path: `standardFolders`, their `Utilities`
+    /// folders, and Finder's folder.
+    private let pathlessFolders: Set<String>
 
     public init(
         folders: [URL], languages: [String] = Locale.preferredLanguages,
@@ -36,6 +47,11 @@ public struct AppProvider: Sendable {
         self.coreServices = coreServices
         self.extraApps = extraApps
         self.home = home
+        let standard = Self.standardFolders.map { HomePath.folder($0, home: home) }
+        pathlessFolders = Set(
+            (standard + standard.map { $0.appending(path: "Utilities") }
+                + [Self.finder.deletingLastPathComponent()])
+                .map(\.standardizedFileURL.path))
     }
 
     /// One row per app, in folder order, then the extra apps. When two apps share a bundle ID,
@@ -81,9 +97,11 @@ public struct AppProvider: Sendable {
             return nil
         }
         let title = try info.displayName(for: languages)
+        let folder = url.deletingLastPathComponent()
+        let shownFolder = pathlessFolders.contains(folder.standardizedFileURL.path) ? nil : folder
         return SearchItem(
             id: info.identifier ?? url.path, kind: .app, title: title,
-            subtitle: url.deletingLastPathComponent().path, target: .openFile(url),
+            subtitle: shownFolder?.path, target: .openFile(url),
             alternateNames: info.fileName == title ? [] : [info.fileName])
     }
 

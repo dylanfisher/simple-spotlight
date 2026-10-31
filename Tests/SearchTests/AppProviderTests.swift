@@ -272,3 +272,36 @@ private func items(_ folders: [URL], languages: [String] = ["en"]) throws -> [Se
     }.value
     #expect(throws: CancellationError.self) { try result.get() }
 }
+
+/// An app where macOS or an installer puts it shows no path; one anywhere else keeps it.
+@Test func anAppInAStandardFolderShowsNoPath() throws {
+    let home = try TempFolder()
+    let applications = home.url.appending(path: "Applications")
+    let utilities = applications.appending(path: "Utilities")
+    let other = applications.appending(path: "Other")
+    try FileManager.default.createDirectory(at: utilities, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    try makeApp("Mail", in: applications, id: "test.mail")
+    try makeApp("Disk", in: utilities, id: "test.disk")
+    try makeApp("Nested", in: other, id: "test.nested")
+
+    let found = try scan([applications], home: home.url)
+
+    let subtitles = Dictionary(uniqueKeysWithValues: found.items.map { ($0.id, $0.subtitle) })
+    #expect(subtitles["test.mail"] == .some(nil))
+    #expect(subtitles["test.disk"] == .some(nil))
+    #expect(subtitles["test.nested"] == other.path)
+}
+
+@Test func systemAppsAndFinderShowNoPath() throws {
+    let system = URL(filePath: "/System/Applications", directoryHint: .isDirectory)
+
+    let found = try scan([system], extraApps: [AppProvider.finder])
+
+    let calculator = try #require(found.items.first { $0.id == "com.apple.calculator" })
+    let terminal = try #require(found.items.first { $0.id == "com.apple.Terminal" })
+    let finder = try #require(found.items.first { $0.id == "com.apple.finder" })
+    #expect(calculator.subtitle == nil)
+    #expect(terminal.subtitle == nil)
+    #expect(finder.subtitle == nil)
+}
