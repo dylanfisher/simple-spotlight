@@ -9,8 +9,15 @@ import Testing
     #expect(FoldedText.fold("é") == "e")
 }
 
+@Test func dropsFormatCharacters() {
+    // German system names carry soft hyphens, such as "System\u{AD}einstellungen".
+    #expect(FoldedText.fold("System\u{AD}einstellungen") == "systemeinstellungen")
+    #expect(FoldedText.fold("a\u{200B}b\u{200D}c") == "abc")
+    #expect(FoldedText("System\u{AD}einstellungen").wordStarts == [0])
+}
+
 @Test func candidateBytesMatchTheQueryFold() {
-    for text in ["Safari", "Résumé Builder", "ｃｏｄｅ", "Ünïcödé Tool"] {
+    for text in ["Safari", "Résumé Builder", "ｃｏｄｅ", "Ünïcödé Tool", "Bild\u{AD}schirm\u{AD}zeit"] {
         #expect(FoldedText(text).bytes == Array(FoldedText.fold(text).utf8))
     }
 }

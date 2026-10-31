@@ -4,10 +4,10 @@ import Foundation
 /// only compares bytes.
 ///
 /// Folding removes case, diacritics and width, so "Résumé" and "ｒｅｓｕｍｅ" both fold to
-/// "resume". A word starts at the beginning of the text, after a space or punctuation, at a
-/// capital that follows a lowercase letter ("FaceTime"), at the last capital of a run of capitals
-/// followed by a lowercase letter (the "C" of "VPNClient"), and where letters and digits meet
-/// ("Time2Go", "Office365").
+/// "resume", and drops format characters such as the soft hyphen. A word starts at the beginning
+/// of the text, after a space or punctuation, at a capital that follows a lowercase letter
+/// ("FaceTime"), at the last capital of a run of capitals followed by a lowercase letter (the "C"
+/// of "VPNClient"), and where letters and digits meet ("Time2Go", "Office365").
 public struct FoldedText: Sendable {
     /// The text as given, which the match's ranges index into.
     public let text: String
@@ -57,16 +57,23 @@ public struct FoldedText: Sendable {
         wordStarts = Self.wordStarts(characters)
     }
 
-    /// `text` with case, diacritics and width folded away: what a query is folded with before it
-    /// is matched against a `FoldedText`.
+    /// `text` with case, diacritics and width folded away, and invisible format characters
+    /// (Unicode category Cf) removed: what a query is folded with before it is matched against a
+    /// `FoldedText`. German names carry soft hyphens ("System\u{AD}einstellungen") that no one
+    /// types.
     public static func fold(_ text: String) -> String {
         if text.utf8.allSatisfy({ $0 < 0x80 }) {
             // Most names are ASCII, where folding only lowercases. Skipping Foundation's pass
             // keeps building the index cheap.
             return String(decoding: text.utf8.map { isCapital($0) ? $0 + 0x20 : $0 }, as: UTF8.self)
         }
-        return text.folding(
+        let folded = text.folding(
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        let isFormat = { (scalar: Unicode.Scalar) in scalar.properties.generalCategory == .format }
+        guard folded.unicodeScalars.contains(where: isFormat) else { return folded }
+        var kept = String.UnicodeScalarView()
+        kept.append(contentsOf: folded.unicodeScalars.filter { !isFormat($0) })
+        return String(kept)
     }
 
     /// What a character contributes to finding word starts. Both initializers must agree on
