@@ -47,22 +47,9 @@ import Testing
 }
 
 @Suite(.serialized) struct IndexBuilderTiming {
-    /// The default app folders, less any this Mac doesn't have.
-    static var appFolders: [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return [
-            "/Applications", "/System/Applications", "/System/Library/CoreServices/Applications",
-            home.appending(path: "Applications").path,
-        ]
-        .filter { FileManager.default.fileExists(atPath: $0) }
-        .map { URL(filePath: $0, directoryHint: .isDirectory) }
-    }
-
     /// B4 gives the build 200 ms; the bound is 5x that so a debug build under load doesn't flake.
     @Test func buildsThisMacsIndexWithinBudget() async throws {
-        let builder = IndexBuilder(
-            apps: AppProvider(folders: Self.appFolders), settingsPanes: SettingsPaneProvider())
-        let build = try await builder.build()
+        let build = try await Settings().indexBuilder().build()
         #expect(build.problems.isEmpty)
         let ids = Set(build.items.map(\.id))
         for id in [

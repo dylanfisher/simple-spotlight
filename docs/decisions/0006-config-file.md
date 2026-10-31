@@ -1,0 +1,69 @@
+# 0006. The config file follows Searcher's, read-only apart from the default file
+
+- **Date:** 2026-10-31
+- **Status:** accepted
+
+## Context
+
+The plan puts every setting in `~/.config/simple-spotlight/config.json` and points at Searcher's
+config design (its decisions 0123, 0126 and 0130, and `ConfigText`, `ConfigFile`, `ConfigStore`
+and `Settings`). Searcher writes the file from its settings window, so most of its config code
+is about writing: patches, a write queue, retries, a byte check before each rename, a chosen
+location and symbolic links written through. Simple Spotlight has no settings window, and the
+plan says the app writes the file only to create the default one.
+
+## Decision
+
+- **Kept from Searcher.** JSON with `//` and `/* */` comments and trailing commas, blanked byte
+  for byte by `Base.ConfigText` so offsets and lines stay the file's own. An unknown key is an
+  error, not ignored. A key given twice is an error on the second's line. A file with any error
+  sets nothing: the last good settings stay, the defaults at launch. Errors read `line 3:
+  maxResults must be a whole number from 1 to 20, not 30`. The default file has a comment above
+  each key: what it does, then "Takes …", the same words its error uses. The folder is watched
+  with FSEvents, not the file, since an atomic save replaces the file. A read that finds the file
+  gone or empty where the last didn't is believed only after a second read
+  `ConfigStore.confirmDelay` (200 ms) later, so a save in place or a sync tool's delete and
+  create doesn't flash an error or reset the settings.
+- **Each key is declared once**, in `Settings.Keys`: the property it sets, its name in the file,
+  its kind (what it takes, how it is read and written), its default and a one-sentence summary.
+  `Settings`' stored properties take their defaults from there. `ConfigFile.parse`, the default
+  file and the tests read the same list; a test checks that every stored property has a key.
+- **Every key error has a line.** Searcher gives a line only to syntax errors and duplicates.
+  Here a scan of the parsed text finds each top-level key's line, so a wrong type or an
+  out-of-range value is reported where it is, as the plan asks.
+- **The app writes only the default file**, and only where there is no file or the file is
+  whitespace only: at launch, and from `ConfigStore.makeDefaultFileIfMissing()`, which ⌘, and
+  the built-in config row use before opening the file. The text goes to a file beside it and is renamed
+  into place; with no file there the rename is `RENAME_EXCL`, so a file an editor saves meanwhile
+  is kept. A file that is gone once confirmed means the defaults, and nothing is written until
+  the next launch or ⌘,. An emptied file, once confirmed, is an error ("is empty"), since the
+  user is editing it.
+- **Cut from Searcher:** patches and the write queue, retries, the quit flush, `UserDefaults`
+  (there are no in-app preferences), a chosen location, and writing through symbolic links.
+  A link at the file's path is read through; a link to nothing is an error and isn't written.
+- **Problems with the file itself are errors in the published state**, beside the file's own:
+  one that can't be read or created, and a folder that can't be watched. Each says what happens
+  instead ("isn't watched, so a change applies at the next launch").
+- **`KeyChord` holds Carbon's values as plain integers**: `Modifiers.rawValue` is Carbon's
+  modifier mask and `Key.code` its `kVK_` code, so Interface hands them to
+  `RegisterEventHotKey` unchanged and Search imports no Carbon. The test target imports Carbon
+  and checks every code and mask against its constant. Modifiers may come in any order in the
+  file and are written in the order cmd, ctrl, opt, shift.
+- **`excludedApps` applies to every item id**, apps' and panes' bundle IDs, through
+  `IndexBuilder.excludedIDs`.
+
+## Alternatives considered
+
+- **Searcher's `ConfigStore` as it is** — rejected: nearly all of it serves in-app writes, which
+  this app doesn't make.
+- **`JSONSerialization`'s `.json5Allowed`** — rejected, as Searcher did: it takes unquoted keys,
+  single quotes and hex numbers too, and its errors still carry no key line.
+- **Writing the default file again whenever the file is deleted** — rejected: a sync tool's
+  delete and create could race it, and a deletion meaning "use the defaults" is what Searcher's
+  users already have.
+
+## Consequences
+
+Launch reads one small file on the store's actor and writes it only on the first launch. A key
+added later is one declaration in `Settings.Keys` plus a stored property; the file, its comment
+and its errors follow from it.
