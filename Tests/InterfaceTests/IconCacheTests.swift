@@ -45,3 +45,27 @@ private actor GatedLoader {
     #expect(image.size == NSSize(width: ResultRow.iconSize, height: ResultRow.iconSize))
     #expect(rep.pixelsWide == Int(ResultRow.iconSize) * 2)
 }
+
+@MainActor @Test func aForgottenPathLoadsAgainAndALateLoadIsDropped() async {
+    let loader = GatedLoader()
+    let cache = IconCache(load: { await loader.load($0) })
+    let path = "/Applications/Safari.app"
+
+    cache.request([path])
+    while await loader.asked.isEmpty { await Task.yield() }
+    cache.forget([path])
+    #expect(!cache.isRequested(path))
+    #expect(await loader.release() == 1)
+    // The forgotten load lands, and is dropped.
+    while cache.finishedLoads == 0 { await Task.yield() }
+    #expect(cache.image(for: path) == nil)
+
+    cache.request([path])
+    while await loader.release() == 0 { await Task.yield() }
+    while cache.image(for: path) == nil { await Task.yield() }
+    #expect(await loader.asked == [path, path])
+
+    cache.forgetAll()
+    #expect(cache.image(for: path) == nil)
+    #expect(!cache.isRequested(path))
+}

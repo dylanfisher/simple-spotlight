@@ -16,11 +16,13 @@ private final class StubOpener: ResultOpener {
     }
 
     private(set) var calls: [Call] = []
+    var clipboard: String?
 
     func openApplication(at url: URL) { calls.append(.application(url)) }
     func open(_ url: URL) { calls.append(.open(url)) }
     func reveal(_ url: URL) { calls.append(.reveal(url)) }
     func copy(_ text: String) { calls.append(.copy(text)) }
+    func clipboardText() -> String? { clipboard }
 }
 
 private let safari = SearchItem(
@@ -49,6 +51,7 @@ private final class Fixture {
     var commands: [String] = []
     var quits = 0
     var errors: [String] = []
+    var announcements: [String] = []
     var configResult: Result<URL, ConfigError> = .success(configURL)
     private(set) var controller: SearchPanelController!
 
@@ -63,6 +66,7 @@ private final class Fixture {
             quit: { [unowned self] in quits += 1 },
             reportError: { [unowned self] in errors.append(String(describing: $0)) },
             ordersPanel: false)
+        controller.announce = { [unowned self] in announcements.append($0) }
         controller.show()
     }
 
@@ -101,6 +105,12 @@ private final class Fixture {
     func command(_ characters: String, keyCode: UInt16 = 0) throws -> Bool {
         controller.panel.performKeyEquivalent(
             with: try keyEvent(characters, modifiers: .command, keyCode: keyCode))
+    }
+
+    /// The Command chord a key with `characters` and `keyCode` makes, on any layout.
+    @discardableResult
+    func command(characters: String, keyCode: UInt16) throws -> Bool {
+        try command(characters, keyCode: keyCode)
     }
 
     var titles: [String] { controller.state.rows.map(\.item.title) }
@@ -483,4 +493,158 @@ extension Fixture {
         ])
     #expect(fixture.controller.icons.isRequested("/Applications/Safari.app"))
     #expect(fixture.controller.icons.isRequested("/Applications/Microsoft Safety Scanner.app"))
+}
+
+@MainActor @Test func theControllerHandlesThePanelsAndTheFieldsEvents() {
+    let fixture = Fixture()
+
+    #expect(fixture.controller.panel.delegate === fixture.controller)
+    #expect(fixture.controller.panel.field.delegate === fixture.controller)
+}
+
+// MARK: Screen
+
+@MainActor @Test func theRowsStopAtTheBottomOfASmallScreen() throws {
+    let fixture = Fixture()
+    fixture.controller.hide()
+    let screen = NSRect(x: 0, y: 0, width: 800, height: 250)
+    let visible = NSRect(x: 0, y: 0, width: 800, height: 225)
+    fixture.controller.show(onScreen: screen, visible: visible)
+
+    try fixture.type("s")
+
+    #expect(fixture.titles.count == 2)
+    #expect(fixture.controller.panel.frame.minY >= visible.minY)
+    try fixture.down()
+    try fixture.down()
+    #expect(fixture.selection == 1)
+}
+
+// MARK: Layouts
+
+@MainActor @Test func commandDigitsOpenRowsByKeyOnAnAzertyLayout() throws {
+    let fixture = Fixture()
+    try fixture.type("saf")
+
+    // AZERTY's 2 key types é without Shift.
+    #expect(try fixture.command(characters: "é", keyCode: 19))
+
+    #expect(
+        fixture.opener.calls == [
+            .application(URL(filePath: "/Applications/Microsoft Safety Scanner.app"))
+        ])
+}
+
+@MainActor @Test func commandLettersFollowTheLayoutsLatinLetters() throws {
+    let fixture = Fixture()
+    try fixture.type("saf")
+
+    // AZERTY swaps A and Q: the key in the US Q place types a.
+    #expect(try fixture.command(characters: "a", keyCode: 12))
+    #expect(fixture.quits == 0)
+    #expect(try fixture.editor.selectedRange() == NSRange(location: 0, length: 3))
+
+    #expect(try fixture.command(characters: "q", keyCode: 0))
+    #expect(fixture.quits == 1)
+}
+
+@MainActor @Test func commandLettersFallBackToTheKeyOnACyrillicLayout() async throws {
+    let fixture = Fixture()
+    try fixture.type("2*3")
+    try fixture.editor.setSelectedRange(NSRange(location: 3, length: 0))
+
+    #expect(try fixture.command(characters: "с", keyCode: 8))
+    #expect(fixture.opener.calls == [.copy("6")])
+    #expect(try fixture.command(characters: "й", keyCode: 12))
+    #expect(fixture.quits == 1)
+    #expect(try fixture.command(characters: "б", keyCode: 43))
+    await fixture.controller.configFileOpened?.value
+    #expect(fixture.opener.calls == [.copy("6"), .open(configURL)])
+}
+
+@MainActor @Test func commandKeypadEnterRevealsAsCommandReturnDoes() throws {
+    let fixture = Fixture()
+    try fixture.type("saf")
+
+    #expect(try fixture.command(characters: "\u{3}", keyCode: 76))
+
+    #expect(fixture.opener.calls == [.reveal(URL(filePath: "/Applications/Safari.app"))])
+}
+
+// MARK: Editing
+
+@MainActor @Test func commandCWithTextSelectedCopiesTheText() throws {
+    let fixture = Fixture()
+    try fixture.type("1000*2")
+    try fixture.editor.setSelectedRange(NSRange(location: 0, length: 4))
+
+    #expect(try fixture.command("c", keyCode: 8))
+
+    #expect(fixture.opener.calls == [.copy("1000")])
+    #expect(fixture.controller.query == "1000*2")
+}
+
+@MainActor @Test func commandXCutsTheSelectedText() throws {
+    let fixture = Fixture()
+    try fixture.type("safari")
+    try fixture.editor.setSelectedRange(NSRange(location: 3, length: 3))
+
+    #expect(try fixture.command("x", keyCode: 7))
+
+    #expect(fixture.opener.calls == [.copy("ari")])
+    #expect(fixture.controller.query == "saf")
+    #expect(fixture.titles.first == "Safari")
+}
+
+@MainActor @Test func commandVPastesTheClipboardOnOneLine() throws {
+    let fixture = Fixture()
+    try fixture.type("saf")
+    try fixture.editor.setSelectedRange(NSRange(location: 0, length: 3))
+    fixture.opener.clipboard = "Font\nBook"
+
+    #expect(try fixture.command("v", keyCode: 9))
+
+    #expect(fixture.controller.query == "Font Book")
+    #expect(fixture.titles.first == "Font Book")
+}
+
+@MainActor @Test func tabKeepsTheKeysAndTheCursorInTheField() throws {
+    let fixture = Fixture()
+    try fixture.type("saf")
+
+    try fixture.press("\t", keyCode: 48)
+    try fixture.press("\u{19}", characters: "\u{19}", modifiers: .shift, keyCode: 48)
+
+    #expect(try fixture.editor.selectedRange() == NSRange(location: 3, length: 0))
+    #expect(fixture.controller.query == "saf")
+}
+
+/// A click makes the view under it first responder only if it accepts that.
+@MainActor @Test func theRowsNeverTakeTheKeysFromTheField() {
+    let fixture = Fixture()
+
+    #expect(!fixture.controller.rowsView.acceptsFirstResponder)
+}
+
+// MARK: Accessibility
+
+@MainActor @Test func theFieldReadsAsASearchField() {
+    let fixture = Fixture()
+
+    #expect(fixture.controller.panel.field.accessibilitySubrole() == .searchField)
+    #expect(fixture.controller.panel.field.accessibilityLabel() == SearchPanel.searchLabel)
+    #expect(fixture.controller.panel.field.placeholderString == SearchPanel.searchLabel)
+}
+
+@MainActor @Test func theResultsAndEachMoveAreAnnounced() throws {
+    let fixture = Fixture()
+
+    try fixture.type("saf")
+    #expect(fixture.announcements.last == "2 results, Safari, /Applications/Safari.app")
+    try fixture.down()
+    #expect(fixture.announcements.last == "Microsoft Safety Scanner")
+    try fixture.type("zzzz")
+    #expect(fixture.announcements.last == "No results")
+    try fixture.type("")
+    #expect(fixture.announcements.last == "No results")
 }

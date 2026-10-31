@@ -21,31 +21,46 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   it resigns key (a click elsewhere, another app forward), not on app deactivation, since the
   app is rarely active. No open or close animation.
 - **Look.** Searcher's recipe after its fixes: a view clipped to a 16 pt rounded rectangle holding
-  the backdrop and a hairline edge (white at 60% in light, 20% in dark). The backdrop is
+  the backdrop and a hairline edge (`EdgeView`). The backdrop is
   `NSGlassEffectView` from macOS 26 and an `NSVisualEffectView` (`.popover`, behind window,
   always active) before it; both follow light and dark appearance. The clip keeps the window's
   shadow rounded: unclipped, the glass draws a faint fill over its whole rectangle while key,
   which shows as a square around the panel (Searcher 0087, "no window shadow around the glass").
 - **Place and size.** On the screen with the mouse, centered across it, its top 22% of the way
   down the screen's frame. The height fits the rows and the top stays put as rows come and go,
-  so the field doesn't jump while typing.
+  so the field doesn't jump while typing. The rows stop at the bottom of the screen's visible
+  area: a short screen shows fewer rows rather than a panel that runs off it, so the selection
+  never needs scrolling into view.
 - **The field is AppKit; the rows are SwiftUI.** An `NSTextField` gets the keys from
   `makeFirstResponder` in the same pass as the show, and its editor's commands (`moveUp:`,
   `moveDown:` with their Ctrl-P/Ctrl-N bindings, `insertNewline:`, `cancelOperation:`) arrive
-  through its delegate. The rows (`SearchView`, `ResultRow`) are SwiftUI in an `NSHostingView`,
-  observing a `SearchState` the controller sets.
+  through its delegate. Tab and Shift-Tab do nothing, since the field is the only control and
+  tabbing would select its text again. The rows (`SearchView`, `ResultRow`) are SwiftUI in an `NSHostingView`,
+  observing a `SearchState` the controller sets. The hosting view never accepts first
+  responder, so a click between rows leaves the keys in the field.
 - **Command chords in the panel.** With no menu bar, no Command chord reaches anything unless the
   key window takes it, so `SearchPanel.performKeyEquivalent` offers each to the controller first:
-  ⌘Return, ⌘1…⌘9, ⌘, and ⌘Q, plus ⌘X, ⌘C, ⌘V and ⌘A passed to the field's editor, which would
-  otherwise not work. ⌘C copies the field's selected text when there is some, else a selected
-  calculator row's answer, else nothing. Undo is not wired.
+  ⌘Return (and ⌘ keypad Enter), ⌘1…⌘9, ⌘, and ⌘Q, plus ⌘X, ⌘C, ⌘V and ⌘A for the field, which
+  would otherwise not work. ⌘C copies the field's selected text when there is some, else a
+  selected calculator row's answer, else nothing. Cut, copy and paste go through
+  `ResultOpener`, so tests never touch the user's clipboard; a paste's line breaks become
+  spaces. Undo is not wired.
+- **Chords on any keyboard layout.** Digits match by key code, since AZERTY's digit keys type
+  punctuation without Shift. Letters and the comma match the character the layout types, so ⌘A
+  is the key labeled A on AZERTY too; when the layout types no ASCII there, as Cyrillic layouts
+  don't, they match the key where the US layout has the letter, as macOS's own menus do. The
+  key codes come from `KeyChord.Key`.
+- **VoiceOver.** The field reads as a search field. Each row is a button labeled with its title
+  and subtitle, and marked selected when it is. The result count with the first row is
+  announced after each search, and the newly selected row after each move.
 - **Search on the main actor.** A keystroke runs `CalculatorProvider` and
   `SearchIndex.results` on the main actor; the index measured about 0.15 ms for 2,000 items in a
   release build, so a hop off and back would cost more than it saves.
 - **Icons are drawn off the main actor.** `NSWorkspace.icon(forFile:)` returns an image that
-  reads the file's icon resources when first drawn, so `IconCache.render` draws it into a 64-pixel
-  bitmap (32 pt at 2x) off the main actor, and the rows draw only that bitmap. Icons are cached
-  by path; a row shows a rounded placeholder until its icon lands. Every settings pane, a
+  reads the file's icon resources when first drawn, so `IconCache.render` draws it into a bitmap
+  off the main actor, and the rows draw only that bitmap. Icons are cached by path; a row shows
+  a rounded placeholder until its icon lands. `forget` and `forgetAll` drop icons, for P6 and P7
+  to call when the index is rebuilt; a load that lands after its path was forgotten is dropped. Every settings pane, a
   `.prefPane` included, shows the System Settings app's icon; calculator and command rows show
   system symbols.
 - **Seams for P6.** The controller takes the index, settings, `leadingItems` (rows such as a
@@ -75,5 +90,5 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
 
 The keystroke path is the field's delegate, the calculator, the index and a SwiftUI update; B1
 and B2 are measured by hand at the end of P6, when the hotkey shows the panel. What tests can't
-see: the look, the click on a row (a SwiftUI tap gesture), the panel over a full-screen app, and
-the frontmost app keeping its active state while the panel takes typing.
+see: the look, the click on a row (a SwiftUI tap gesture), the panel over a full-screen app, the
+frontmost app keeping its active state while the panel takes typing, and what VoiceOver says.

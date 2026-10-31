@@ -1,7 +1,7 @@
 import AppKit
 
-/// Opens what a row points at. A protocol so tests can record the calls rather than launch
-/// apps or write to the clipboard.
+/// Opens what a row points at, and reaches the clipboard for the field. A protocol so tests can
+/// record the calls rather than launch apps or touch the user's clipboard.
 @MainActor
 public protocol ResultOpener {
     /// Launches the app at `url`, or brings it forward if it runs.
@@ -12,6 +12,8 @@ public protocol ResultOpener {
     func reveal(_ url: URL)
     /// Puts `text` alone on the clipboard.
     func copy(_ text: String)
+    /// The clipboard's plain text, if it holds any.
+    func clipboardText() -> String?
 }
 
 /// Opens rows through `NSWorkspace` and copies to a pasteboard, the general one in the app.
@@ -42,13 +44,35 @@ public final class WorkspaceOpener: ResultOpener {
             url, configuration: NSWorkspace.OpenConfiguration(), completionHandler: report(_:_:))
     }
 
+    /// The check of the file `reveal` started last, for tests to wait on.
+    private(set) var revealed: Task<Void, Never>?
+
+    /// Finder opens with nothing selected for a file that is gone, so a gone file is reported
+    /// instead. Whether it is there is asked off the main actor.
     public func reveal(_ url: URL) {
-        workspace.activateFileViewerSelecting([url])
+        revealed = Task {
+            guard await Self.exists(url) else {
+                reportError(OpenerError(description: "\(url.path(percentEncoded: false)) is gone"))
+                return
+            }
+            workspace.activateFileViewerSelecting([url])
+        }
     }
 
     public func copy(_ text: String) {
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        if !pasteboard.setString(text, forType: .string) {
+            reportError(OpenerError(description: "couldn't copy \(text) to the clipboard"))
+        }
+    }
+
+    public func clipboardText() -> String? {
+        pasteboard.string(forType: .string)
+    }
+
+    @concurrent
+    private nonisolated static func exists(_ url: URL) async -> Bool {
+        FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
     }
 
     /// The workspace calls back on a queue of its own.
@@ -56,4 +80,9 @@ public final class WorkspaceOpener: ResultOpener {
         guard let error else { return }
         Task { @MainActor in self.reportError(error) }
     }
+}
+
+/// Something the opener couldn't do, in words.
+struct OpenerError: Error, CustomStringConvertible {
+    let description: String
 }

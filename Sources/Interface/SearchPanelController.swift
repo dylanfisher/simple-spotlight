@@ -5,7 +5,7 @@ import SwiftUI
 /// Shows and hides the search panel, searches the current index and the calculator on each
 /// keystroke, and handles the panel's keys: the arrows and Ctrl-N/P move the selection, Return
 /// opens, ⌘Return reveals, ⌘1…⌘9 open a row, ⌘C copies a calculator answer, Esc clears then
-/// hides, ⌘, opens the config file and ⌘Q quits (docs/decisions/0008-search-panel-window.md).
+/// hides, ⌘, opens the config file and ⌘Q quits, whatever the keyboard layout (docs/decisions/0008-search-panel-window.md).
 ///
 /// A keystroke searches on the main actor: the index answers in well under a millisecond, so a
 /// hop off it would cost more than the search.
@@ -31,6 +31,12 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     let panel = SearchPanel()
     let state = SearchState()
     let icons: IconCache
+    private(set) var rowsView: ResultListHostingView!
+    /// Speaks to VoiceOver: the results after each search, the row selected after each move.
+    var announce: @MainActor (String) -> Void = SearchPanelController.postAnnouncement
+    /// The visible area of the screen the panel last showed on; the rows stop at its bottom.
+    /// Nil before the first show.
+    private var visibleFrame: NSRect?
     /// The open of the config file ⌘, started last, for tests to wait on.
     private(set) var configFileOpened: Task<Void, Never>?
     private let calculator: CalculatorProvider
@@ -69,9 +75,10 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         self.reportError = reportError
         self.ordersPanel = ordersPanel
         super.init()
-        let rows = NSHostingView(
+        let rows = ResultListHostingView(
             rootView: SearchView(state: state, icons: icons) { [weak self] in self?.open(row: $0) })
         rows.sizingOptions = []
+        rowsView = rows
         panel.install(rows: rows)
         panel.field.delegate = self
         panel.delegate = self
@@ -82,15 +89,23 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// Shows the panel on the screen with the mouse, the last query selected in the field.
     public func show() {
-        guard !isShown else { return }
-        isShown = true
         // The mouse can sit on the edge between two screens, where no frame contains it.
         let mouse = NSEvent.mouseLocation
         guard
             let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
                 ?? NSScreen.main
         else { preconditionFailure("there is no screen to show the panel on") }
-        panel.setFrameTopLeftPoint(SearchPanel.topLeft(on: screen.frame))
+        show(onScreen: screen.frame, visible: screen.visibleFrame)
+    }
+
+    /// Shows the panel on a screen whose frame is `screen` and whose visible area is `visible`,
+    /// with as many rows as fit above the visible area's bottom.
+    func show(onScreen screen: NSRect, visible: NSRect) {
+        guard !isShown else { return }
+        isShown = true
+        visibleFrame = visible
+        panel.setFrameTopLeftPoint(SearchPanel.topLeft(on: screen))
+        search(keepingSelection: true)
         // The field selects its whole text as it takes the keys, so typing replaces the query.
         panel.makeFirstResponder(panel.field)
         guard ordersPanel else { return }
@@ -134,13 +149,20 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         if settings.calculator, let item = calculator.item(for: query) {
             rows.append(SearchState.Row(item: item, ranges: []))
         }
-        let room = max(settings.maxResults - rows.count, 0)
+        let limit = min(settings.maxResults, rowsThatFit)
+        let room = max(limit - rows.count, 0)
         rows += index.results(for: query, limit: room).map {
             SearchState.Row(item: $0.item, ranges: $0.ranges)
         }
-        rows = Array(rows.prefix(settings.maxResults))
+        rows = Array(rows.prefix(limit))
         state.rows = rows
         state.selection = kept.flatMap { id in rows.firstIndex { $0.item.id == id } } ?? 0
+        if let first = rows.first {
+            let count = rows.count == 1 ? "1 result" : "\(rows.count) results"
+            announce("\(count), \(ResultRow.accessibilityLabel(for: first.item))")
+        } else {
+            announce("No results")
+        }
         icons.request(
             rows.compactMap {
                 guard case .file(let path) = ResultRow.icon(for: $0.item) else { return nil }
@@ -149,13 +171,30 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         panel.fit(rows: rows.count)
     }
 
+    /// The rows with room between the panel's top and the bottom of the screen's visible area.
+    private var rowsThatFit: Int {
+        guard let visibleFrame else { return .max }
+        return SearchPanel.rows(fitting: panel.frame.maxY - visibleFrame.minY)
+    }
+
     private var selectedRow: SearchState.Row? {
         state.rows.indices.contains(state.selection) ? state.rows[state.selection] : nil
     }
 
     private func moveSelection(by offset: Int) {
         guard !state.rows.isEmpty else { return }
-        state.selection = min(max(state.selection + offset, 0), state.rows.count - 1)
+        let selection = min(max(state.selection + offset, 0), state.rows.count - 1)
+        guard selection != state.selection else { return }
+        state.selection = selection
+        announce(ResultRow.accessibilityLabel(for: state.rows[selection].item))
+    }
+
+    private static func postAnnouncement(_ text: String) {
+        NSAccessibility.post(
+            element: NSApplication.shared, notification: .announcementRequested,
+            userInfo: [
+                .announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ])
     }
 
     // MARK: Opening
@@ -193,49 +232,107 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         panel.field.currentEditor() as? NSTextView
     }
 
+    /// The Command chords the panel takes, and what each does.
+    enum Chord: Equatable {
+        case reveal, openConfig, quit, copy, cut, paste, selectAll
+        /// Opens the row at this index.
+        case row(Int)
+    }
+
+    /// The virtual key code of the keypad's Enter key, Carbon's `kVK_ANSI_KeypadEnter`. A Return
+    /// for ⌘Return.
+    static let keypadEnterCode: UInt16 = 0x4C
+
+    /// The chords named by a letter or punctuation, with the character the key types on a Latin
+    /// layout and the key that types it on a US one.
+    private static let namedChords: [(character: String, key: KeyChord.Key, chord: Chord)] = [
+        ("c", .c, .copy), ("x", .x, .cut), ("v", .v, .paste), ("a", .a, .selectAll),
+        ("q", .q, .quit), (",", .comma, .openConfig),
+    ]
+    private static let digitKeys: [KeyChord.Key] = [
+        .digit1, .digit2, .digit3, .digit4, .digit5, .digit6, .digit7, .digit8, .digit9,
+    ]
+
+    /// The chord a Command key makes, on any layout. Digits go by key, as AZERTY's digit keys
+    /// type punctuation without Shift. Letters and punctuation go by the character the layout
+    /// types, so ⌘A is the key that types a, unless the layout types no ASCII there, as a
+    /// Cyrillic one doesn't; then by the key, where the US layout has the letter.
+    static func chord(characters: String?, keyCode: UInt16) -> Chord? {
+        if let digit = digitKeys.firstIndex(where: { $0.code == keyCode }) {
+            return .row(digit)
+        }
+        if keyCode == KeyChord.Key.return.code || keyCode == keypadEnterCode { return .reveal }
+        let typed = characters?.lowercased() ?? ""
+        if let digit = Int(typed), (1...9).contains(digit) { return .row(digit - 1) }
+        if typed.unicodeScalars.allSatisfy(\.isASCII), !typed.isEmpty {
+            return namedChords.first { $0.character == typed }?.chord
+        }
+        return namedChords.first { $0.key.code == keyCode }?.chord
+    }
+
     /// The Command chords. The app has no menu bar, so the editing chords the field needs are
-    /// passed to its editor here; Command with any other modifier, or a key not listed, is
-    /// left to the panel.
+    /// handled here; Command with any other modifier, or a key not listed, is left to the panel.
     private func keyEquivalent(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        guard modifiers == .command, let key = event.charactersIgnoringModifiers?.lowercased()
+        guard modifiers == .command,
+            let chord = Self.chord(
+                characters: event.charactersIgnoringModifiers, keyCode: event.keyCode)
         else { return false }
-        switch key {
-        case "\r":
+        switch chord {
+        case .reveal:
             revealSelected()
-        case ",":
+        case .openConfig:
             openConfigFile()
-        case "q":
+        case .quit:
             quit()
-        case "c":
+        case .copy:
             copySelectionOrAnswer()
-        case "x":
-            editor?.cut(nil)
-        case "v":
-            editor?.paste(nil)
-        case "a":
+        case .cut:
+            cutSelection()
+        case .paste:
+            paste()
+        case .selectAll:
             editor?.selectAll(nil)
-        case _ where key.count == 1 && ("1"..."9").contains(key):
-            guard let number = Int(key) else { preconditionFailure("\(key) isn't a digit") }
-            open(row: number - 1)
-        default:
-            return false
+        case .row(let index):
+            open(row: index)
         }
         return true
+    }
+
+    /// The field's selected text and its range, or nil when nothing is selected.
+    private var selectedText: (text: String, range: NSRange)? {
+        guard let editor else { return nil }
+        let range = editor.selectedRange()
+        guard range.length > 0 else { return nil }
+        return ((editor.string as NSString).substring(with: range), range)
     }
 
     /// ⌘C: the selected text in the field when there is some; otherwise the answer of a selected
     /// calculator row. With neither, nothing.
     private func copySelectionOrAnswer() {
-        guard let editor else { return }
-        if editor.selectedRange().length > 0 {
-            editor.copy(nil)
+        if let selected = selectedText {
+            opener.copy(selected.text)
             return
         }
         guard let item = selectedRow?.item, item.kind == .calculation,
             case .copyText(let text) = item.target
         else { return }
         opener.copy(text)
+    }
+
+    /// ⌘X: copies the field's selected text and deletes it, which searches again.
+    private func cutSelection() {
+        guard let selected = selectedText, let editor else { return }
+        opener.copy(selected.text)
+        editor.insertText("", replacementRange: selected.range)
+    }
+
+    /// ⌘V: the clipboard's text over the field's selection, its line breaks as spaces, since
+    /// the query is one line.
+    private func paste() {
+        guard let editor, let text = opener.clipboardText() else { return }
+        let line = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        editor.insertText(line, replacementRange: editor.selectedRange())
     }
 
     public func controlTextDidChange(_ notification: Notification) {
@@ -256,6 +353,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
             #selector(NSResponder.insertLineBreak(_:)):
             open(row: state.selection)
+        case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
+            // The field is the panel's only control; Tab would only select its text again.
+            break
         case #selector(NSResponder.cancelOperation(_:)):
             if query.isEmpty {
                 hide()

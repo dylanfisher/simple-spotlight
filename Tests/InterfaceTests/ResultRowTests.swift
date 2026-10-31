@@ -62,3 +62,14 @@ private func boldCharacters(_ title: AttributedString) -> String {
         return
     }
 }
+
+@Test func aRowReadsItsTitleThenItsSubtitle() {
+    let app = SearchItem(
+        id: "com.apple.Safari", kind: .app, title: "Safari", subtitle: "/Applications/Safari.app",
+        target: .openFile(URL(filePath: "/Applications/Safari.app")))
+    let bare = SearchItem(
+        id: "quit", kind: .command, title: "Quit", subtitle: nil, target: .command("quit"))
+
+    #expect(ResultRow.accessibilityLabel(for: app) == "Safari, /Applications/Safari.app")
+    #expect(ResultRow.accessibilityLabel(for: bare) == "Quit")
+}

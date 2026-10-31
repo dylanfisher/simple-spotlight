@@ -53,3 +53,12 @@ import Testing
     #expect(!panel.performKeyEquivalent(with: try keyEvent("t", modifiers: .command)))
     #expect(offered == ["q", "t"])
 }
+
+@MainActor @Test func theRowsThatFitBelowATopAreCounted() {
+    let room = SearchPanel.height(rows: 3)
+
+    #expect(SearchPanel.rows(fitting: room) == 3)
+    #expect(SearchPanel.rows(fitting: room - 1) == 2)
+    #expect(SearchPanel.rows(fitting: SearchPanel.fieldHeight) == 0)
+    #expect(SearchPanel.rows(fitting: 10) == 0)
+}

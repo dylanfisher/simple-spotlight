@@ -48,8 +48,14 @@ struct ResultRow: View {
             }
         }
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.accessibilityLabel(for: row.item))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// What VoiceOver reads for `item`'s row: its title, then its subtitle.
+    nonisolated static func accessibilityLabel(for item: SearchItem) -> String {
+        [item.title, item.subtitle].compactMap { $0 }.joined(separator: ", ")
     }
 
     @ViewBuilder

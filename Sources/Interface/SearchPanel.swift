@@ -16,13 +16,30 @@ final class SearchPanel: NSPanel {
     static let cornerRadius: CGFloat = 16
     /// The space above and below the rows, and either side of them.
     static let listInset: CGFloat = 6
+    /// The line between the field and the rows.
+    static let separatorHeight: CGFloat = 1
     /// How far below the top of the screen the panel's top sits, as a share of its height.
     static let topShare: CGFloat = 0.22
+    /// What the field is called, to VoiceOver and in its placeholder.
+    static let searchLabel = "Search"
+
+    /// The space either side of the field's contents: left of the magnifier, right of the text.
+    private static let sideMargin: CGFloat = 18
+    private static let magnifierSize: CGFloat = 24
+    /// The space between the magnifier and the text.
+    private static let magnifierGap: CGFloat = 10
+    private static let fieldLineHeight: CGFloat = 30
 
     /// The panel's height with `rows` rows under the field: the field alone with none.
     static func height(rows: Int) -> CGFloat {
         guard rows > 0 else { return fieldHeight }
-        return fieldHeight + 1 + 2 * listInset + CGFloat(rows) * ResultRow.height
+        return fieldHeight + separatorHeight + 2 * listInset + CGFloat(rows) * ResultRow.height
+    }
+
+    /// The most rows a panel `height` tall has room for.
+    static func rows(fitting height: CGFloat) -> Int {
+        let room = height - fieldHeight - separatorHeight - 2 * listInset
+        return max(Int((room / ResultRow.height).rounded(.down)), 0)
     }
 
     /// Where the panel's top-left corner goes on a screen whose frame is `screen`: centered
@@ -67,8 +84,9 @@ final class SearchPanel: NSPanel {
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 24, weight: .light)
-        field.placeholderString = "Search"
-        field.setAccessibilityLabel("Search")
+        field.placeholderString = Self.searchLabel
+        field.setAccessibilityLabel(Self.searchLabel)
+        field.setAccessibilitySubrole(.searchField)
         field.cell?.isScrollable = true
         field.cell?.wraps = false
 
@@ -90,6 +108,8 @@ final class SearchPanel: NSPanel {
             NSRect(x: frame.minX, y: top - height, width: Self.width, height: height),
             display: isVisible)
         layoutContent()
+        // The window server shapes the shadow from the pixels at the old size until told.
+        if isVisible { invalidateShadow() }
     }
 
     private let magnifier: NSImageView = {
@@ -105,16 +125,19 @@ final class SearchPanel: NSPanel {
     private func layoutContent() {
         let height = frame.height
         let fieldTop = height - Self.fieldHeight
-        let symbol: CGFloat = 24
+        let symbol = Self.magnifierSize
         magnifier.frame = NSRect(
-            x: 18, y: fieldTop + (Self.fieldHeight - symbol) / 2, width: symbol, height: symbol)
-        let lineHeight: CGFloat = 30
+            x: Self.sideMargin, y: fieldTop + (Self.fieldHeight - symbol) / 2, width: symbol,
+            height: symbol)
+        let textLeft = Self.sideMargin + symbol + Self.magnifierGap
         field.frame = NSRect(
-            x: 52, y: fieldTop + (Self.fieldHeight - lineHeight) / 2, width: Self.width - 70,
-            height: lineHeight)
+            x: textLeft, y: fieldTop + (Self.fieldHeight - Self.fieldLineHeight) / 2,
+            width: Self.width - textLeft - Self.sideMargin, height: Self.fieldLineHeight)
+        let rowsTop = fieldTop - Self.separatorHeight
         separator.isHidden = height <= Self.fieldHeight
-        separator.frame = NSRect(x: 0, y: fieldTop - 1, width: Self.width, height: 1)
-        rows?.frame = NSRect(x: 0, y: 0, width: Self.width, height: max(fieldTop - 1, 0))
+        separator.frame = NSRect(
+            x: 0, y: rowsTop, width: Self.width, height: Self.separatorHeight)
+        rows?.frame = NSRect(x: 0, y: 0, width: Self.width, height: max(rowsTop, 0))
     }
 
     /// The field takes the keys; the panel does, though it has no title bar.

@@ -10,8 +10,12 @@ public final class IconCache {
 
     @ObservationIgnored private let load: Load
     private var images: [String: NSImage] = [:]
-    /// Every path asked for, loaded or loading.
-    @ObservationIgnored private var requested: Set<String> = []
+    /// Every path asked for, loaded or loading, with the number of its latest request. A load
+    /// that lands for a path forgotten or asked for again since is dropped.
+    @ObservationIgnored private var requested: [String: Int] = [:]
+    @ObservationIgnored private var requests = 0
+    /// How many loads have landed, dropped ones included, for tests to wait on.
+    @ObservationIgnored private(set) var finishedLoads = 0
 
     /// `load` defaults to `render`; tests replace it.
     public init(load: @escaping Load = { await IconCache.render($0) }) {
@@ -25,15 +29,36 @@ public final class IconCache {
 
     /// Starts loading the icons of `paths` not already loaded or loading.
     public func request(_ paths: some Sequence<String>) {
-        for path in paths where requested.insert(path).inserted {
+        for path in paths where requested[path] == nil {
+            requests += 1
+            let request = requests
+            requested[path] = request
             Task { [load] in
-                images[path] = await load(path)
+                let image = await load(path)
+                finishedLoads += 1
+                guard requested[path] == request else { return }
+                images[path] = image
             }
         }
     }
 
+    /// Drops the icons of `paths`, so the next request loads them again: for apps that may have
+    /// changed when the index is rebuilt.
+    public func forget(_ paths: some Sequence<String>) {
+        for path in paths {
+            requested[path] = nil
+            images[path] = nil
+        }
+    }
+
+    /// Drops every icon, as `forget` does.
+    public func forgetAll() {
+        requested = [:]
+        images = [:]
+    }
+
     func isRequested(_ path: String) -> Bool {
-        requested.contains(path)
+        requested[path] != nil
     }
 
     /// The scale icons are drawn at. Every Mac display since 2012 is 2x or 1x; a 1x display
