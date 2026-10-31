@@ -6,6 +6,9 @@ public struct CalculatorProvider: Sendable {
     /// The id of every calculator row, whatever the expression. Usage doesn't count it
     /// (docs/decisions/0010-usage-ranking.md).
     public static let itemID = "calculator"
+    /// The Calculator app, whose icon the calculator's row shows.
+    public static let calculatorApp = URL(
+        filePath: "/System/Applications/Calculator.app", directoryHint: .isDirectory)
 
     /// Sets the separators of the row's title. The copied answer is the same in every locale.
     public let locale: Locale
@@ -15,13 +18,14 @@ public struct CalculatorProvider: Sendable {
     }
 
     /// The row for `query`, or nil when the query isn't a calculation `Base.Expression` accepts
-    /// or its answer isn't finite.
+    /// or its answer isn't finite. Its title is the answer, grouped as the locale does, and its
+    /// subtitle the expression.
     public func item(for query: String) -> SearchItem? {
         // Any error means the query is something else, such as an app name.
         guard let value = try? Base.Expression.evaluate(query) else { return nil }
         let text = NumberText(value, locale: locale)
         return SearchItem(
-            id: Self.itemID, kind: .calculation, title: "= \(text.grouped)",
+            id: Self.itemID, kind: .calculation, title: text.grouped,
             subtitle: query.trimmingCharacters(in: .whitespacesAndNewlines),
             target: .copyText(text.plain))
     }

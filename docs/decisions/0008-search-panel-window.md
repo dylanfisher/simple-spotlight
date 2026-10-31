@@ -61,8 +61,11 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   off the main actor, and the rows draw only that bitmap. Icons are cached by path; a row shows
   a rounded placeholder until its icon lands. `forget` and `forgetAll` drop icons, for P6 and P7
   to call when the index is rebuilt; a load that lands after its path was forgotten is dropped. Every settings pane, a
-  `.prefPane` included, shows the System Settings app's icon; calculator and command rows show
-  system symbols.
+  `.prefPane` included, shows the System Settings app's icon, and the calculator's row the
+  Calculator app's; command and problem rows show system symbols.
+- **The calculator's row.** Its answer is the title, large, with the expression under it in
+  secondary text. Selected, it gets a gray fill with primary text rather than the accent color
+  the other rows get: Return copies its answer rather than opening something.
 - **Seams for P6.** The controller takes the index, settings, `leadingItems` (rows such as a
   config error, shown first and counted in `maxResults`), a `ResultOpener` (the workspace in the
   app, a recorder in tests), the config file's maker for ⌘,, a handler for `.command` rows, the

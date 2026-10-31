@@ -9,7 +9,7 @@ private let provider = CalculatorProvider(locale: Locale(identifier: "en_US"))
     let item = try #require(provider.item(for: " 1000+234.5 "))
     #expect(item.id == CalculatorProvider.itemID)
     #expect(item.kind == .calculation)
-    #expect(item.title == "= 1,234.5")
+    #expect(item.title == "1,234.5")
     #expect(item.subtitle == "1000+234.5")
     #expect(item.target == .copyText("1234.5"))
 }
@@ -17,7 +17,7 @@ private let provider = CalculatorProvider(locale: Locale(identifier: "en_US"))
 @Test func trimsOnlyTheSubtitle() {
     let item = provider.item(for: "\u{00A0}2 + 2\n")
     #expect(item?.subtitle == "2 + 2")
-    #expect(item?.title == "= 4")
+    #expect(item?.title == "4")
 }
 
 @Test func readsBackItsCopiedAnswer() {
@@ -37,7 +37,7 @@ private let provider = CalculatorProvider(locale: Locale(identifier: "en_US"))
 @Test func copiesPlainTextInAnyLocale() {
     let german = CalculatorProvider(locale: Locale(identifier: "de_DE"))
     let item = german.item(for: "1,000*1.5")
-    #expect(item?.title == "= 1.500")
+    #expect(item?.title == "1.500")
     #expect(item?.target == .copyText("1500"))
 }
 

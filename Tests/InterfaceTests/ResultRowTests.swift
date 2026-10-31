@@ -47,20 +47,35 @@ private func boldCharacters(_ title: AttributedString) -> String {
     #expect(ResultRow.icon(for: prefPane) == .file(systemSettings))
 }
 
-@Test func calculatorAndCommandRowsShowASymbol() throws {
+@Test func theCalculatorRowShowsTheCalculatorAppsIcon() throws {
     let calculation = try #require(
         CalculatorProvider(locale: Locale(identifier: "en_US")).item(for: "1+1"))
+
+    let calculator = CalculatorProvider.calculatorApp.path(percentEncoded: false)
+    #expect(calculator.hasPrefix("/System/Applications/Calculator.app"))
+    #expect(ResultRow.icon(for: calculation) == .file(calculator))
+}
+
+@Test func aCommandRowShowsASymbol() {
     let command = SearchItem(
         id: "quit", kind: .command, title: "Quit", subtitle: nil, target: .command("quit"))
 
-    guard case .symbol = ResultRow.icon(for: calculation) else {
-        Issue.record("the calculator row has no symbol")
-        return
-    }
     guard case .symbol = ResultRow.icon(for: command) else {
         Issue.record("a command row has no symbol")
         return
     }
+}
+
+/// The calculator's row is selected in gray, as its answer is copied rather than opened.
+@Test func onlyTheCalculatorRowIsSelectedWithoutTheAccentColor() throws {
+    let calculation = try #require(
+        CalculatorProvider(locale: Locale(identifier: "en_US")).item(for: "1+1"))
+    let app = SearchItem(
+        id: "com.apple.Safari", kind: .app, title: "Safari", subtitle: nil,
+        target: .openFile(URL(filePath: "/Applications/Safari.app")))
+
+    #expect(ResultRow.selection(for: calculation) == .neutral)
+    #expect(ResultRow.selection(for: app) == .accent)
 }
 
 @Test func aRowReadsItsTitleThenItsSubtitle() {

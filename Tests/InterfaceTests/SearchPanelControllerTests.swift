@@ -148,7 +148,7 @@ private final class Fixture {
 
     try fixture.type("2*3")
 
-    #expect(fixture.titles == ["= 6"])
+    #expect(fixture.titles == ["6"])
 }
 
 @MainActor @Test func theCalculatorSettingTurnsItsRowOff() throws {
@@ -324,7 +324,7 @@ extension Fixture {
 @MainActor @Test func returnOnTheCalculatorRowCopiesThePlainAnswer() throws {
     let fixture = Fixture()
     try fixture.type("1000*2")
-    #expect(fixture.titles.first == "= 2,000")
+    #expect(fixture.titles.first == "2,000")
 
     try fixture.press("\r", keyCode: 36)
 

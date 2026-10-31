@@ -2,7 +2,8 @@ import AppKit
 import Search
 import SwiftUI
 
-/// One result: its icon, its title with the matched characters bold, and its subtitle.
+/// One result: its icon, its title with the matched characters bold, and its subtitle; for the
+/// calculator, its answer over its expression.
 struct ResultRow: View {
     /// What a row's icon shows.
     enum Icon: Equatable {
@@ -10,6 +11,14 @@ struct ResultRow: View {
         case file(String)
         /// A system symbol.
         case symbol(String)
+    }
+
+    /// How a selected row is drawn.
+    enum Selection: Equatable {
+        /// White text on the accent color: a row that opens something.
+        case accent
+        /// Primary text on a gray fill: the calculator's row, whose answer is copied.
+        case neutral
     }
 
     nonisolated static let height: CGFloat = 48
@@ -26,33 +35,71 @@ struct ResultRow: View {
         HStack(spacing: 10) {
             iconView
                 .frame(width: Self.iconSize, height: Self.iconSize)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(Self.title(row.item.title, bold: row.ranges))
-                    .font(.system(size: 15))
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                if let subtitle = row.item.subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(
-                            isSelected
-                                ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
-                }
+            if row.item.kind == .calculation {
+                calculationText
+            } else {
+                text
             }
-            .lineLimit(1)
-            .truncationMode(.middle)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .frame(height: Self.height)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 8).fill(Color.accentColor)
+                switch Self.selection(for: row.item) {
+                case .accent: RoundedRectangle(cornerRadius: 8).fill(Color.accentColor)
+                case .neutral: RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                }
             }
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.accessibilityLabel(for: row.item))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Whether the row is drawn as selected on the accent color, in white.
+    private var onAccent: Bool {
+        isSelected && Self.selection(for: row.item) == .accent
+    }
+
+    /// The title with the matched characters bold, over the subtitle when there is one.
+    private var text: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(Self.title(row.item.title, bold: row.ranges))
+                .font(.system(size: 15))
+                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            if let subtitle = row.item.subtitle {
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(
+                        onAccent ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.middle)
+    }
+
+    /// The answer, large, over the expression, quieter.
+    private var calculationText: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(row.item.title)
+                .font(.system(size: 20, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+            if let expression = row.item.subtitle {
+                Text(expression)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+
+    /// How `item`'s row is drawn when selected.
+    nonisolated static func selection(for item: SearchItem) -> Selection {
+        item.kind == .calculation ? .neutral : .accent
     }
 
     /// What VoiceOver reads for `item`'s row: its title, then its subtitle.
@@ -73,18 +120,18 @@ struct ResultRow: View {
         case .symbol(let name):
             Image(systemName: name)
                 .font(.system(size: 24))
-                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(onAccent ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
         }
     }
 
     /// The icon of `item`'s row. Every settings pane shows the System Settings app's, as
-    /// Spotlight's do.
+    /// Spotlight's do, and the calculator's row the Calculator app's.
     nonisolated static func icon(for item: SearchItem) -> Icon {
         switch item.kind {
         case .settingsPane:
             return .file(SettingsPaneProvider.systemSettingsApp.path(percentEncoded: false))
         case .calculation:
-            return .symbol("plus.forwardslash.minus")
+            return .file(CalculatorProvider.calculatorApp.path(percentEncoded: false))
         case .command:
             return .symbol("gearshape")
         case .problem:
