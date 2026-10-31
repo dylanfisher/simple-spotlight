@@ -33,7 +33,7 @@ duplicate it — do not abstract yet (principle 3).
 |---|---|---|---|
 | **base** | `Sources/Base` | Domain-free building blocks: text folding and matching, expression evaluation, config text scanning. Foundation only; no AppKit. Portable as-is. | nothing |
 | **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator), ranking, and the config file (`Settings` declares its keys and holds their values; `ConfigFile` parses it; `ConfigStore` reads and watches it). No AppKit, so it's testable without a window. | base |
-| **interface** | `Sources/Interface` | The search panel, its SwiftUI views, the global hotkey, launching results. | search, base |
+| **interface** | `Sources/Interface` | The search panel, its SwiftUI views, the global hotkey, the login item, launching results, and the coordinator that applies each config state. | search, base |
 | **app** | `Sources/SimpleSpotlight` | The executable: app delegate and wiring. Kept thin. | everything |
 
 **Dependency direction is one-way: app → interface → search → base.** Never upward.
