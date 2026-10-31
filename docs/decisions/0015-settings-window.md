@@ -20,14 +20,20 @@ and has to cope with a file the user is editing, or has broken, while it is open
   and displays; results; app folders; apps left out; the config file). One titled, closable
   window in an `NSHostingController`. Opening it activates the app; closing it activates the
   app that was frontmost when it opened, since an agent app with no window would otherwise keep
-  the keys. ⌘W and ⌘Q work in it, as the app has no menu bar to route them.
+  the keys. The app yields activation to it first (`yieldActivation(to:)`, as macOS 14 and later
+  require), and does nothing if another app has the keys by then, as when the user switched
+  apps with the window open. Closing drops the window and its form; showing builds them again,
+  and the model keeps what they show. ⌘W and ⌘Q work in it, as the app has no menu bar to route
+  them, found by the panel's lookup so they work on a layout that types no Latin letters.
 - **Writes edit the file's text, one key at a time.** `ConfigStore.update` takes a change to the
   settings, reads the file, and `ConfigFile.changing` writes in only the keys whose value
   changed: the value's text is replaced, or a key the file leaves out goes in after the last
   key, at its indent, with its comment above it, matching a trailing comma and the file's line
   ends (`Base.ConfigText`, following Searcher's 0126). Comments, blank lines, key order and the
   spelling of untouched values stay; a change the file already has writes nothing. With no file
-  or an empty one, the default file is the text changed. The write goes beside the destination,
+  or an empty one, the default file is the text changed; an empty file is believed only once a
+  read `confirmDelay` later finds it so, since an editor's save in place truncates the file
+  before it writes it. The write goes beside the destination,
   through a symbolic link, with the destination's permissions, and is renamed into place only if
   the file still has the bytes the change was made to; otherwise the change is made again to the
   new text, up to three times. It shares this path with the default file's write. Unknown keys
@@ -42,7 +48,9 @@ and has to cope with a file the user is editing, or has broken, while it is open
   such a file as well, so a write that races the user's broken save doesn't land; that error, or
   any failed write, shows the same way and the change is undone in the window.
 - **The recorder.** A click listens; the next chord pressed is the hotkey if the config file
-  would take it (`KeyChord(checking:_:)`, the rule parsing applies), else the window says why and
+  would take it (`KeyChord(checking:_:)`, the rule parsing applies, which also refuses Command alone with W, Q,
+  comma, H, M, C, X, V and A, since a global shortcut on them would take the standard commands
+  from every app), else the window says why and
   keeps listening. Esc with no modifier, a second click, or the window losing the keys stops
   without a change. It listens through a local event monitor, and while it does the app gives up
   its hotkey, since a registered chord is taken by Carbon before the window sees it; the
@@ -52,7 +60,9 @@ and has to cope with a file the user is editing, or has broken, while it is open
   words: for a macOS shortcut such as Spotlight's ⌘Space, with an Open Keyboard Shortcuts
   button, since the user may be about to free it; for a chord another app registered, with
   "Record another shortcut", while the chord before it keeps working (0009). While the window is
-  open the one-time alert is skipped, as the window says it already; the panel's row stays. The
+  open the one-time alert is skipped, as the window says it already, and the chord counts as
+  told, so the next launch doesn't raise it either; the panel's row stays. Closing the window
+  stops the recorder first, so the chord registered again as it stops doesn't raise the alert. The
   alert and the refused-chord row point to Settings to record another shortcut.
 - **Lists.** App folders are added from an open panel, written `~/…` inside the home folder.
   Apps are left out by choosing them in an open panel; their bundle IDs are read off the main

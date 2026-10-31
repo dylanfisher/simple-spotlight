@@ -48,7 +48,7 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                 }
             }
-            Button("Open config.json", action: model.openConfigFile)
+            Button("Open \(ConfigFile.name)", action: model.openConfigFile)
         }
     }
 
@@ -132,7 +132,7 @@ struct SettingsView: View {
         } header: {
             Text("Left out of results")
         } footer: {
-            Text("By bundle ID. Panes and other IDs can be added in config.json.")
+            Text("By bundle ID. Panes and other IDs can be added in \(ConfigFile.name).")
                 .foregroundStyle(.secondary)
         }
     }
@@ -147,7 +147,7 @@ struct SettingsView: View {
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)
             }
-            Button("Open config.json", action: model.openConfigFile)
+            Button("Open \(ConfigFile.name)", action: model.openConfigFile)
         } footer: {
             Text("Changes here are saved to the file, and edits to the file show here.")
                 .foregroundStyle(.secondary)

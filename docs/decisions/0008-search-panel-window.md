@@ -87,7 +87,7 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   asked for Spotlight's quieter look.
 - **Seams for P6.** The controller takes the index, settings, `leadingItems` (rows such as a
   config error, shown first and counted in `maxResults`), a `ResultOpener` (the workspace in the
-  app, a recorder in tests), the config file's maker for ⌘,, a handler for `.command` rows, the
+  app, a recorder in tests), the config file's maker for the config error row, the settings opener for ⌘,, a handler for `.command` rows, the
   quit action for ⌘Q and an error reporter. Setting the index or settings searches again,
   keeping the query and the selected item.
 - **Tests never order the panel in.** `ordersPanel: false` makes `show` give the field the keys in

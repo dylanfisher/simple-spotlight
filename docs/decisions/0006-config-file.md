@@ -1,4 +1,4 @@
-# 0006. The config file follows Searcher's, read-only apart from the default file
+# 0006. The config file follows Searcher's; the app writes it only to make the default file
 
 - **Date:** 2026-10-31
 - **Status:** accepted; amended by [0015](0015-settings-window.md) (the settings window writes
@@ -37,13 +37,16 @@ plan says the app writes the file only to create the default one.
 - **Limits.** A file over `ConfigFile.largestSize` is refused without being read whole, and at
   most `ConfigFile.mostErrors` errors are reported, the last counting the rest, so a pasted file
   can't hold up the store or bury the first error.
-- **The app writes only the default file**, and only where there is no file or the file is
+- **The app writes the default file**, and only where there is no file or the file is
   whitespace only (an empty file only once a second read confirms it): at launch, and from
-  `ConfigStore.makeDefaultFileIfMissing()`, which ⌘, and the built-in config row use before
-  opening the file. The text goes to a file beside its destination and is renamed into place;
-  with no file there the rename is `RENAME_EXCL`, so a file an editor saves meanwhile is kept. A file that is gone once confirmed means the defaults, and nothing is written until
-  the next launch or ⌘,. An emptied file, once confirmed, is an error ("is empty"), since the
-  user is editing it.
+  `ConfigStore.makeDefaultFileIfMissing()`, which the config error row and the settings
+  window's "Open config.json" button use before opening the file. Changes from the settings
+  window are the only other write ([0015](0015-settings-window.md)). The text goes to a file
+  beside its destination and is renamed into place; with no file there the rename is
+  `RENAME_EXCL`, so a file an editor saves meanwhile is kept. A file that is gone once
+  confirmed means the defaults, and nothing is written until the next launch, the next time the
+  file is opened, or the next change in the settings window. An emptied file, once confirmed,
+  is an error ("is empty"), since the user is editing it.
 - **Symbolic links, as dotfiles kept elsewhere are.** A link at the file's path is read through,
   and the folder of the file it leads to is watched as well as the store's own, worked out again
   at each read, so retargeting the link is followed. The default file is written through to the
