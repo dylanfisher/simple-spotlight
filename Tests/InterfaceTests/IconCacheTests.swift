@@ -46,6 +46,22 @@ private actor GatedLoader {
     #expect(rep.pixelsWide == Int(ResultRow.iconSize) * 2)
 }
 
+/// The icon fills its bitmap, rather than a corner of it at the size given in pixels.
+@Test func theRealLoaderDrawsTheIconAcrossTheWholeBitmap() async throws {
+    let image = await IconCache.render("/System/Applications/Calculator.app")
+
+    let rep = try #require(image.representations.first as? NSBitmapImageRep)
+    var drawn = (minX: Int.max, maxX: Int.min, minY: Int.max, maxY: Int.min)
+    for x in 0..<rep.pixelsWide {
+        for y in 0..<rep.pixelsHigh where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0 {
+            drawn = (min(drawn.minX, x), max(drawn.maxX, x), min(drawn.minY, y), max(drawn.maxY, y))
+        }
+    }
+    // App icons leave a margin around their shape, a tenth of the side or so.
+    #expect(drawn.maxX - drawn.minX > rep.pixelsWide * 3 / 4)
+    #expect(drawn.maxY - drawn.minY > rep.pixelsHigh * 3 / 4)
+}
+
 @MainActor @Test func aForgottenPathLoadsAgainAndALateLoadIsDropped() async {
     let loader = GatedLoader()
     let cache = IconCache(load: { await loader.load($0) })

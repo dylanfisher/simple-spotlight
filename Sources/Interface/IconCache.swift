@@ -77,10 +77,14 @@ public final class IconCache {
             let bitmap = NSBitmapImageRep(
                 bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
                 samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-                bytesPerRow: 0, bitsPerPixel: 0),
-            let context = NSGraphicsContext(bitmapImageRep: bitmap)
+                bytesPerRow: 0, bitsPerPixel: 0)
         else { preconditionFailure("can't make a \(pixels)-pixel bitmap") }
+        // The context maps points to pixels by the bitmap's size when it is made; made before,
+        // it would draw a point per pixel, into one corner.
         bitmap.size = size
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+            preconditionFailure("can't draw into a \(pixels)-pixel bitmap")
+        }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
         icon.draw(in: NSRect(origin: .zero, size: size))

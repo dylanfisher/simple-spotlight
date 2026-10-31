@@ -12,8 +12,10 @@ struct ResultRow: View {
         case symbol(String)
     }
 
-    nonisolated static let height: CGFloat = 44
-    nonisolated static let iconSize: CGFloat = 32
+    nonisolated static let height: CGFloat = 48
+    /// Most of the row's height, larger than the title and subtitle stacked, as Finder's list
+    /// draws them. App icons leave a margin around their shape, so the shape itself is smaller.
+    nonisolated static let iconSize: CGFloat = 40
 
     let row: SearchState.Row
     /// The loaded icon for a `.file` icon; nil until it loads.
@@ -63,14 +65,14 @@ struct ResultRow: View {
         switch Self.icon(for: row.item) {
         case .file:
             if let image {
-                Image(nsImage: image)
+                Image(nsImage: image).resizable()
             } else {
-                RoundedRectangle(cornerRadius: 7).fill(.quaternary)
-                    .padding(2)
+                RoundedRectangle(cornerRadius: 9).fill(.quaternary)
+                    .padding(4)
             }
         case .symbol(let name):
             Image(systemName: name)
-                .font(.system(size: 20))
+                .font(.system(size: 24))
                 .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
         }
     }
