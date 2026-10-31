@@ -16,13 +16,11 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
         public static let option = Modifiers(rawValue: 1 << 11)
         public static let control = Modifiers(rawValue: 1 << 12)
 
-        /// Each modifier with its name in the config file, in the order the file writes them.
-        static let named: [(modifier: Modifiers, name: String)] = [
-            (.command, "cmd"), (.control, "ctrl"), (.option, "opt"), (.shift, "shift"),
-        ]
-        /// The order macOS menus draw modifier symbols in.
-        static let symbols: [(modifier: Modifiers, symbol: String)] = [
-            (.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘"),
+        /// Each modifier with its name in the config file and its symbol, in the order macOS
+        /// menus draw them, which is also the order the config file writes them in.
+        static let named: [(modifier: Modifiers, name: String, symbol: String)] = [
+            (.control, "ctrl", "⌃"), (.option, "opt", "⌥"), (.shift, "shift", "⇧"),
+            (.command, "cmd", "⌘"),
         ]
     }
 
@@ -124,10 +122,19 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
             }
         }
 
-        /// Whether it is F1 to F20, which may be a chord without a modifier.
+        /// Whether it is an F-key, which may be a chord without a modifier.
         var isFunctionKey: Bool {
             rawValue.count > 1 && rawValue.first == "f" && Int(rawValue.dropFirst()) != nil
         }
+
+        /// The F-keys as messages name them: "F1 to F20".
+        static let functionKeyRange: String = {
+            let keys = allCases.filter(\.isFunctionKey)
+            guard let first = keys.first, let last = keys.last else {
+                preconditionFailure("Key has no F-keys")
+            }
+            return "\(first.symbol) to \(last.symbol)"
+        }()
 
         /// How a menu shows the key: "K", "7", "Space", "F5", ",".
         var symbol: String {
@@ -165,9 +172,10 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
         self.key = key
     }
 
-    /// The chord `text` spells: modifiers `cmd`, `ctrl`, `opt` and `shift` in any order, each
-    /// followed by `+`, then a key by its `Key` name, such as "cmd+space" or "ctrl+opt+k". A key
-    /// other than F1 to F20 needs a modifier.
+    /// The chord `text` spells: modifiers `ctrl`, `opt`, `shift` and `cmd` in any order, each
+    /// followed by `+`, then a key by its `Key` name, such as "cmd+space" or "ctrl+opt+k", in
+    /// any case. A key that isn't an F-key needs a modifier other than shift alone, which would
+    /// take the key away from typing.
     public init(parsing text: String) throws(ParseError) {
         guard !text.isEmpty else { throw ParseError(reason: "it is empty") }
         let parts = text.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
@@ -176,26 +184,37 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
         }
         var modifiers: Modifiers = []
         for part in parts.dropLast() {
-            guard let modifier = Modifiers.named.first(where: { $0.name == part })?.modifier else {
-                throw ParseError(
-                    reason: "\"\(part)\" isn't a modifier: they are cmd, ctrl, opt and shift")
+            guard
+                let modifier = Modifiers.named.first(where: { $0.name == part.lowercased() })?
+                    .modifier
+            else {
+                let names = Modifiers.named.map(\.name)
+                throw ParseError(reason: "\"\(part)\" isn't a modifier: they are \(listed(names))")
             }
             guard !modifiers.contains(modifier) else {
-                throw ParseError(reason: "it has \(part) twice")
+                throw ParseError(reason: "it has \(part.lowercased()) twice")
             }
             modifiers.insert(modifier)
         }
-        guard let key = Key(rawValue: last) else {
+        guard let key = Key(rawValue: last.lowercased()) else {
             throw ParseError(reason: "\"\(last)\" isn't a key")
         }
-        guard !modifiers.isEmpty || key.isFunctionKey else {
-            throw ParseError(reason: "it needs a modifier, as only F1 to F20 can be used alone")
+        if !key.isFunctionKey {
+            let range = Key.functionKeyRange
+            guard !modifiers.isEmpty else {
+                throw ParseError(reason: "it needs a modifier, as only \(range) can be used alone")
+            }
+            guard modifiers != .shift else {
+                throw ParseError(
+                    reason: "shift alone would take the key from typing; only \(range) can be"
+                        + " used with shift alone")
+            }
         }
         self.init(modifiers, key)
     }
 
-    /// The chord as the config file spells it: "cmd+shift+k", modifiers in the order cmd, ctrl,
-    /// opt, shift.
+    /// The chord as the config file spells it: "ctrl+shift+k", modifiers in `Modifiers.named`'s
+    /// order.
     public var text: String {
         let held = Modifiers.named.filter { modifiers.contains($0.modifier) }.map(\.name)
         return (held + [key.rawValue]).joined(separator: "+")
@@ -203,7 +222,13 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
 
     /// The chord as a menu shows it, for messages: "⌘Space", "⌃⌥K".
     public var description: String {
-        Modifiers.symbols.filter { modifiers.contains($0.modifier) }.map(\.symbol).joined()
+        Modifiers.named.filter { modifiers.contains($0.modifier) }.map(\.symbol).joined()
             + key.symbol
     }
+}
+
+/// `items` as a sentence lists them: "a, b and c".
+private func listed(_ items: [String]) -> String {
+    guard let last = items.last, items.count > 1 else { return items.joined() }
+    return items.dropLast().joined(separator: ", ") + " and " + last
 }

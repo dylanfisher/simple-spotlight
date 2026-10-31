@@ -10,25 +10,43 @@ import Testing
     #expect(try KeyChord(parsing: "cmd+leftbracket") == KeyChord(.command, .leftBracket))
 }
 
+@Test func parsesAnyCase() throws {
+    #expect(try KeyChord(parsing: "Cmd+Space") == KeyChord(.command, .space))
+    #expect(try KeyChord(parsing: "F13") == KeyChord([], .f13))
+    #expect(try KeyChord(parsing: "CTRL+LeftBracket") == KeyChord(.control, .leftBracket))
+}
+
+@Test func takesShiftAloneOnlyWithAnFKey() throws {
+    #expect(try KeyChord(parsing: "shift+f3") == KeyChord(.shift, .f3))
+    #expect(try KeyChord(parsing: "shift+cmd+a") == KeyChord([.shift, .command], .a))
+}
+
 @Test(arguments: [
     ("", "it is empty"),
     ("cmd+", "it has no key after the last +"),
     ("cmd+foo", "\"foo\" isn't a key"),
     ("space", "it needs a modifier, as only F1 to F20 can be used alone"),
-    ("hyper+k", "\"hyper\" isn't a modifier: they are cmd, ctrl, opt and shift"),
-    ("cmd+cmd+k", "it has cmd twice"),
-    ("Cmd+K", "\"Cmd\" isn't a modifier: they are cmd, ctrl, opt and shift"),
+    ("hyper+k", "\"hyper\" isn't a modifier: they are ctrl, opt, shift and cmd"),
+    ("cmd+Cmd+k", "it has cmd twice"),
     ("cmd+f21", "\"f21\" isn't a key"),
+    (
+        "shift+a",
+        "shift alone would take the key from typing; only F1 to F20 can be used with shift alone"
+    ),
+    (
+        "shift+space",
+        "shift alone would take the key from typing; only F1 to F20 can be used with shift alone"
+    ),
 ])
 func refusesABadChord(text: String, reason: String) {
     #expect(throws: KeyChord.ParseError(reason: reason)) { try KeyChord(parsing: text) }
 }
 
 @Test func writesTheConfigSpellingBack() throws {
-    for text in ["cmd+space", "cmd+ctrl+opt+shift+k", "f12", "opt+rightbracket", "ctrl+0"] {
+    for text in ["cmd+space", "ctrl+opt+shift+cmd+k", "f12", "opt+rightbracket", "ctrl+0"] {
         #expect(try KeyChord(parsing: text).text == text)
     }
-    #expect(try KeyChord(parsing: "shift+cmd+k").text == "cmd+shift+k")
+    #expect(try KeyChord(parsing: "Cmd+Shift+K").text == "shift+cmd+k")
 }
 
 @Test func printsAsAMenuDoes() {
