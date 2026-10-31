@@ -45,9 +45,9 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   `makeFirstResponder` in the same pass as the show, and its editor's commands (`moveUp:`,
   `moveDown:` with their Ctrl-P/Ctrl-N bindings, `insertNewline:`, `cancelOperation:`) arrive
   through its delegate. Tab and Shift-Tab do nothing, since the field is the only control and
-  tabbing would select its text again. The rows (`SearchView`, `ResultRow`) are SwiftUI in an `NSHostingView`,
-  observing a `SearchState` the controller sets. The hosting view never accepts first
-  responder, so a click between rows leaves the keys in the field.
+  tabbing would select its text again. The rows (`SearchView`, `ResultRow`) are SwiftUI in an
+  `NSHostingView`, observing a `SearchState` the controller sets. The hosting view never accepts
+  first responder, so a click between rows leaves the keys in the field.
 - **Command chords in the panel.** With no menu bar, no Command chord reaches anything unless the
   key window takes it, so `SearchPanel.performKeyEquivalent` offers each to the controller first:
   ⌘Return (and ⌘ keypad Enter), ⌘1…⌘9, ⌘, and ⌘Q, plus ⌘X, ⌘C, ⌘V and ⌘A for the field, which
@@ -71,9 +71,9 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   reads the file's icon resources when first drawn, so `IconCache.render` draws it into a bitmap
   off the main actor, and the rows draw only that bitmap. Icons are cached by path; a row shows
   a rounded placeholder until its icon lands. `forget` and `forgetAll` drop icons, for P6 and P7
-  to call when the index is rebuilt; a load that lands after its path was forgotten is dropped. Every settings pane, a
-  `.prefPane` included, shows the System Settings app's icon, and the calculator's row the
-  Calculator app's; command and problem rows show system symbols.
+  to call when the index is rebuilt; a load that lands after its path was forgotten is dropped.
+  Every settings pane, a `.prefPane` included, shows the System Settings app's icon, and the
+  calculator's row the Calculator app's; command and problem rows show system symbols.
 - **The calculator's row.** Its answer is the title, large, with the expression under it in
   secondary text. Selected, it gets a gray fill with primary text rather than the accent color
   the other rows get: Return copies its answer rather than opening something.
@@ -109,5 +109,6 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
 
 The keystroke path is the field's delegate, the calculator, the index and a SwiftUI update; B1
 and B2 are measured by hand at the end of P6, when the hotkey shows the panel. What tests can't
-see: the look (the panel over a white and a black window, in light and dark mode), the click on a row (a SwiftUI tap gesture), the panel over a full-screen app, the
-frontmost app keeping its active state while the panel takes typing, and what VoiceOver says.
+see: the look (the panel over a white and a black window, in light and dark mode), the click on a
+row (a SwiftUI tap gesture), the panel over a full-screen app, the frontmost app keeping its
+active state while the panel takes typing, and what VoiceOver says.

@@ -8,7 +8,7 @@
 B1 gives the hotkey 50 ms to put the panel on screen with the field taking the keys. Measured on
 a release build (Apple M5 Max, macOS 26.6.2), each show after the first took 4–17 ms, but the
 first took 36–45 ms. Most of the first show's time was work AppKit does only once: creating the
-window server's window for the deferred panel, the first drawing of the glass and the field, and
+window server's window for the deferred panel, the first drawing of the backdrop and the field, and
 setting up the field editor. Those 45 ms run up to the commit; the frame reaches the display one
 refresh later, so the margin was too thin. The first show after a login item launch is the one
 that matters most.
