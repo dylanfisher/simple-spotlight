@@ -14,6 +14,22 @@ private let provider = CalculatorProvider(locale: Locale(identifier: "en_US"))
     #expect(item.target == .copyText("1234.5"))
 }
 
+@Test func trimsOnlyTheSubtitle() {
+    let item = provider.item(for: "\u{00A0}2 + 2\n")
+    #expect(item?.subtitle == "2 + 2")
+    #expect(item?.title == "= 4")
+}
+
+@Test func readsBackItsCopiedAnswer() {
+    for query in ["1e21*1.5", "1e-7*1.5", "2/3"] {
+        guard case .copyText(let copied) = provider.item(for: query)?.target else {
+            Issue.record("no item for \(query)")
+            continue
+        }
+        #expect(provider.item(for: copied + "*1")?.target == .copyText(copied))
+    }
+}
+
 @Test func keepsOneIDForEveryExpression() {
     #expect(provider.item(for: "2+2")?.id == provider.item(for: "3*3")?.id)
 }
@@ -41,9 +57,9 @@ private let provider = CalculatorProvider(locale: Locale(identifier: "en_US"))
 }
 
 @Suite(.serialized) struct CalculatorProviderTiming {
-    /// B2 gives a keystroke 16 ms, and the calculator runs on each one. A calculation takes about
-    /// 25 us in a debug build; the bound is the plan's "well under 1 ms". The first call loads the
-    /// number formatter's data once and is left out.
+    /// The calculator runs on every keystroke, within B2 (docs/performance.md). A calculation
+    /// takes about 25 us in a debug build; the bound is the plan's "well under 1 ms". The first
+    /// call loads the number formatter's data once and is left out.
     @Test func calculatesWithinBudget() {
         let query = "sqrt(1,234,567.89)^2 / (3 mod 2) + 10% - sin pi"
         #expect(provider.item(for: query) != nil)

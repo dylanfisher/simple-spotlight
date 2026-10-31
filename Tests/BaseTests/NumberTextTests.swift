@@ -11,7 +11,7 @@ private func text(_ value: Double, _ locale: Locale = english) -> (String, Strin
     return (text.grouped, text.plain)
 }
 
-@Test func roundsToTenSignificantDigitsWithoutTrailingZeros() {
+@Test func roundsWithoutTrailingZeros() {
     #expect(text(0.1 + 0.2) == ("0.3", "0.3"))
     #expect(text(2.0 / 3) == ("0.6666666667", "0.6666666667"))
     #expect(text(4) == ("4", "4"))
@@ -31,6 +31,22 @@ private func text(_ value: Double, _ locale: Locale = english) -> (String, Strin
     #expect(text(1.5e-7) == ("1.5E-7", "1.5E-7"))
     #expect(text(1e20) == ("100,000,000,000,000,000,000", "100000000000000000000"))
     #expect(text(0.000001) == ("0.000001", "0.000001"))
+    #expect(text(-1e-7) == ("-1E-7", "-1E-7"))
+}
+
+@Test func choosesTheFormAfterRounding() {
+    let below = NumberText.scientificBelow
+    let from = NumberText.scientificFrom
+    #expect(text(below.nextDown) == text(below))
+    #expect(text(0.00000099999999999) == text(0.000001))
+    #expect(text(from.nextDown) == text(from))
+    #expect(text(from.nextDown).1.contains("E"))
+    #expect(text(below.nextDown).1.contains("E") == false)
+}
+
+@Test func keepsTheSignificantDigits() {
+    // Pi has more digits than any count the calculator would show.
+    #expect(text(.pi * 1000).1.filter(\.isNumber).count == NumberText.significantDigits)
 }
 
 @Test func zeroHasNoSign() {

@@ -25,6 +25,9 @@ private func error(_ text: String) -> Expression.Error? {
     #expect(value("64/4/2") == 8)
     #expect(value("(2+3)*4") == 20)
     #expect(value(" 2 + 2 ") == 4)
+    #expect(value("5--3") == 8)
+    #expect(value("2*-3") == -6)
+    #expect(value("1 + + 1") == 2)
 }
 
 @Test func takesPercentAndMod() {
@@ -34,6 +37,9 @@ private func error(_ text: String) -> Expression.Error? {
     #expect(value("-7 mod 3") == 2)
     #expect(value("7 mod -3") == -2)
     #expect(value("7 MOD 3") == 1)
+    #expect(value("5%%") == 0.0005)
+    #expect(value("10 mod 3 mod 2") == 1)
+    #expect(error("10%5") == .unexpectedToken(offset: 3))
 }
 
 @Test func takesFunctionsAndConstants() {
@@ -51,6 +57,34 @@ private func error(_ text: String) -> Expression.Error? {
     #expect(value("Sqrt(PI*PI)") == Double.pi)
 }
 
+@Test func readsTypographicOperatorsAndWhitespace() {
+    #expect(value("2×3") == 6)
+    #expect(value("6÷3") == 2)
+    #expect(value("5−3") == 2)
+    #expect(value("2\u{00A0}+\u{00A0}2") == 4)
+    #expect(value("2+\n2\r\n") == 4)
+}
+
+@Test func readsExponents() {
+    #expect(value("1e3*1") == 1000)
+    #expect(value("2.5E-4*2") == 0.0005)
+    #expect(value("1E+2+1") == 101)
+    #expect(value("1.5E21*1") == 1.5e21)
+    #expect(error("1e999*1") == .notFinite)
+}
+
+@Test func snapsRoundingNoiseToZero() {
+    #expect(value("sin pi") == 0)
+    #expect(value("cos(pi/2)") == 0)
+    #expect(value("tan pi") == 0)
+    #expect(value("1-0.9-0.1") == 0)
+    #expect(value("1e-20*1") == 1e-20)
+    #expect(value("sin 1e-20") == 1e-20)
+    #expect(value("1e-20+0") == 1e-20)
+    let tan = value("tan(pi/2)")
+    #expect(tan.map { $0 > 1e15 } == true)
+}
+
 @Test func readsDecimalsAndThousandsSeparators() {
     #expect(value("1,000*2") == 2000)
     #expect(value("1,234,567.5+0") == 1_234_567.5)
@@ -62,7 +96,7 @@ private func error(_ text: String) -> Expression.Error? {
 }
 
 @Test func rejectsWhatHasNoOperatorOrFunction() {
-    for text in ["42", "-5", "+5", "--5", "(5)", "pi", "e", "-pi", "1,000"] {
+    for text in ["42", "-5", "+5", "--5", "(5)", "pi", "e", "-pi", "1,000", "1e3", "-1E-7"] {
         #expect(error(text) == .notACalculation, "\(text)")
     }
 }
@@ -85,7 +119,8 @@ private func error(_ text: String) -> Expression.Error? {
     #expect(error("1 2") == .unexpectedToken(offset: 2))
     #expect(error("*2") == .unexpectedToken(offset: 0))
     #expect(error("2+$") == .unexpectedCharacter(offset: 2))
-    #expect(error("2×3") == .unexpectedCharacter(offset: 1))
+    #expect(error("2·3") == .unexpectedCharacter(offset: 1))
+    #expect(error("2e") == .unexpectedToken(offset: 1))
     #expect(error(".") == .unexpectedCharacter(offset: 0))
 }
 
@@ -96,6 +131,9 @@ private func error(_ text: String) -> Expression.Error? {
     #expect(error("5 mod 0") == .notFinite)
     #expect(error("10^400") == .notFinite)
     #expect(error(String(repeating: "9", count: 400) + "*1") == .notFinite)
+    #expect(error("1/(1/0)") == .notFinite)
+    #expect(error("1/ln(0)") == .notFinite)
+    #expect(error("0*(1/0)+1") == .notFinite)
 }
 
 @Test func deepNestingIsAnErrorNotACrash() {
@@ -104,6 +142,17 @@ private func error(_ text: String) -> Expression.Error? {
     #expect(error(open + "1+1" + close) == .tooDeep)
     #expect(error(String(repeating: "-", count: 10_000) + "1+1") == .tooDeep)
     #expect(error(String(repeating: "2^", count: 10_000) + "1") == .tooDeep)
-    #expect(
-        value(String(repeating: "(", count: 50) + "1+1" + String(repeating: ")", count: 50)) == 2)
+}
+
+@Test func nestsUpToTheMaximumDepth() {
+    let depth = Expression.maximumDepth
+    let nested = { (levels: Int) in
+        String(repeating: "(", count: levels) + "1+1" + String(repeating: ")", count: levels)
+    }
+    #expect(value(nested(depth)) == 2)
+    #expect(error(nested(depth + 1)) == .tooDeep)
+    #expect(value(String(repeating: "-", count: depth) + "1+1") == 2)
+    #expect(error(String(repeating: "-", count: depth + 1) + "1+1") == .tooDeep)
+    #expect(value(String(repeating: "1^", count: depth) + "1") == 1)
+    #expect(error(String(repeating: "1^", count: depth + 1) + "1") == .tooDeep)
 }

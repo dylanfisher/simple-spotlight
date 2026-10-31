@@ -17,12 +17,12 @@ public struct CalculatorProvider: Sendable {
     /// The row for `query`, or nil when the query isn't a calculation `Base.Expression` accepts
     /// or its answer isn't finite.
     public func item(for query: String) -> SearchItem? {
-        let expression = query.trimmingCharacters(in: .whitespacesAndNewlines)
         // Any error means the query is something else, such as an app name.
-        guard let value = try? Base.Expression.evaluate(expression) else { return nil }
+        guard let value = try? Base.Expression.evaluate(query) else { return nil }
         let text = NumberText(value, locale: locale)
         return SearchItem(
-            id: Self.itemID, kind: .calculation, title: "= \(text.grouped)", subtitle: expression,
+            id: Self.itemID, kind: .calculation, title: "= \(text.grouped)",
+            subtitle: query.trimmingCharacters(in: .whitespacesAndNewlines),
             target: .copyText(text.plain))
     }
 }

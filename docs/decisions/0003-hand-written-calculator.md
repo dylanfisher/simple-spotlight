@@ -6,58 +6,47 @@
 ## Context
 
 Every keystroke runs the calculator on the query, so it sees app names, partial expressions and
-anything pasted into the field. It must reject most of that quickly and never crash, and it must
-show a row only for queries that are clearly arithmetic: "2+2" and "sqrt 16" yes, "1password",
-"2048", "3d" and "safari" no. The plan fixes the operators, constants and functions, and asks for
-answers rounded to 10 significant digits, grouped on screen but not on the clipboard.
+anything pasted into the field. It must reject most of that quickly and never crash, and show a
+row only for queries that are clearly arithmetic: "2+2" and "sqrt 16" yes, "1password", "2048",
+"3d" and "safari" no.
 
 ## Decision
 
-- **Hand-written tokenizer and recursive-descent parser** (`Base.Expression`), evaluating as it
-  parses and returning a `Double` or a typed error. Its doc comment holds the grammar; it is the
-  one statement of it.
-- **What counts as a calculation:** text that tokenizes and parses in full and applies at least
-  one binary operator, `%` or a function. A sign is not an operator, so "-5", "(5)", "pi" and
-  "-pi" are bare values and give no row; "-5+1", "10%" and "pi*2" do. Any word that isn't `pi`,
-  `e`, `mod` or a function name is an error, which is what rules out "1password", "3d" and
-  "safari": there are no variables and no implicit multiplication.
-- **"1-password" gives no row.** It has an operator, but "password" is not a name, and treating
-  unknown words as errors keeps the rule to one sentence. A launcher query with a hyphen is far
-  more often a name than a sum.
-- **Function arguments:** a function followed by `(` takes only the parenthesized group, so
-  `sqrt(16)^2` is 16; without `(` it takes the following unary expression, so `sqrt 2^4` is 4 and
-  `sqrt 16 + 1` is 5, the usual reading of "sin x^2".
-- **Smaller choices:** `-2^2` is -4 (power binds tighter than a sign); `mod` takes the divisor's
-  sign (`-7 mod 3` is 2, as in mathematics and spreadsheets); `%` is only postfix percent, so
-  `200 + 10%` is 200.1; trigonometry is in radians and `log` is base 10. A `,` is accepted only
-  as a thousands separator (1–3 digits before the first, exactly 3 after each), in every locale,
-  so "1,2" is an error rather than 12.
-- **Depth limit:** the parser recurses once per nesting level, so nesting past 100 levels is an
-  error. A pasted run of thousands of `(` otherwise overflows the stack (a test checks this).
-- **Formatting** (`Base.NumberText`): one `FloatingPointFormatStyle`, 10 significant digits,
-  rendered twice: with the user's locale for the title ("1.234,5" in German) and with
-  `en_US_POSIX` and no grouping for the copied text ("1234.5"). Below 1e-6 and from 1e21 up it
-  switches to scientific notation ("1.5E21"), JavaScript's thresholds, which the plan's examples
-  follow. -0 shows as 0.
-- **Stable id:** every calculator row has the id `calculator`, so P7's usage store keeps one
-  entry for the calculator, not one per expression.
+A hand-written tokenizer and recursive-descent parser, `Base.Expression`. Its doc comment states
+the grammar, what counts as a calculation, the separator rule and the noise rule; its
+`maximumDepth` bounds nesting. `Base.NumberText` formats the answer, and `CalculatorProvider`
+gives every row the fixed id `itemID` so usage keeps one entry for the calculator. The choices a
+reader might question:
+
+- **"1-password" gives no row.** It has an operator, but any word that isn't a constant, a
+  function or `mod` is an error. That one rule is what rules out "1password", "3d" and "safari",
+  with no special case for hyphens; a launcher query with a hyphen is far more often a name than
+  a sum.
+- **`mod` takes the divisor's sign** (`-7 mod 3` is 2), as in mathematics and spreadsheets,
+  rather than the dividend's, as Swift's `truncatingRemainder` does.
+- **Trigonometry is in radians**, as in every programming language; no one types degrees into a
+  launcher often enough to make it the default.
+- **Rounding noise is 0.** `sin pi` is 1.2e-16 and `1-0.9-0.1` is -2.8e-17 in Double, which would
+  show as noise. A sum, difference, `sin`, `cos` or `tan` below 1e-12 times its largest operand
+  snaps to 0. The rule applies per step and relative to that step's operands, so `1e-20*1` and
+  `sin 1e-20` keep their value; products, quotients and powers don't cancel, so they are left
+  alone. `tan(pi/2)` stays a large number, since it isn't small.
+- **Exponents are read** (`1.5E21`), so a copied scientific answer pastes back. An exponent
+  needs a digit after `e`, so `2e` is still 2 followed by the constant `e`, an error with no
+  implicit multiplication. A bare literal like "1e3" is a bare number and gives no row.
 
 ## Alternatives considered
 
 - **NSExpression** — rejected: it raises Objective-C exceptions on malformed input ("2+",
   "(1"), which Swift can't catch, so a half-typed expression would crash the app. It also
-  evaluates names as key paths and has its own function syntax (`sqrt:`), and gives no way to
-  tell a bare number from a calculation.
+  evaluates names as key paths, has its own function syntax (`sqrt:`), and can't tell a bare
+  number from a calculation.
 - **A Pratt parser or an operator-precedence table** — rejected: the grammar has six levels and
   no user-defined operators; one method per level reads more directly.
-- **Unknown words as "not a calculation" only when no operator is present** — rejected: it would
-  make "1-password" an error anyway (the word has no value), so the rule gains nothing.
-- **Formatting digits by hand from `%.9e`** — rejected: the locale's grouping isn't always in
-  threes (Indian "12,34,567"), which the format style already handles.
+- **Snapping relative to the largest magnitude in the whole evaluation** — rejected: `1e-20*1`
+  would become 0, though nothing cancelled.
 
 ## Consequences
 
+The query must use `.` for decimals in every locale; the title shows the locale's separators.
 Adding an operator or function means a token and a line in the grammar and its doc comment.
-Locale-aware input (a `,` decimal separator) is not supported; the title shows the locale's
-separators, but the query must use `.` for decimals. The scientific form uses `E`, which pastes
-back into most programs but not into this calculator, which doesn't read exponents.
