@@ -8,6 +8,9 @@ import SwiftUI
 /// else the selected row's path, URL or answer, Esc clears then hides, ⌘, opens the config file
 /// and ⌘Q quits, whatever the keyboard layout (docs/decisions/0008-search-panel-window.md).
 ///
+/// With `showOnAllDisplays` it shows a panel on every display, all with the same query, rows and
+/// selection; one takes the keys (docs/decisions/0013-all-displays.md).
+///
 /// A keystroke searches on the main actor: the index answers in well under a millisecond, so a
 /// hop off it would cost more than the search.
 @MainActor
@@ -16,10 +19,15 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     public var index: SearchIndex {
         didSet { search(keepingSelection: true) }
     }
-    /// Read for `maxResults` and `calculator`. Changing either searches again, as setting
-    /// `index` does; searching happens only while the panel shows.
+    /// Read for `maxResults`, `calculator` and `showOnAllDisplays`. Changing either of the first
+    /// two searches again, as setting `index` does; searching happens only while the panel
+    /// shows. The next show reads `showOnAllDisplays`.
     public var settings: Search.Settings {
         didSet {
+            if settings.showOnAllDisplays, !oldValue.showOnAllDisplays {
+                // The other displays' panels are drawn once too, so their first show is quick.
+                Task { [weak self] in self?.prepare() }
+            }
             guard
                 settings.maxResults != oldValue.maxResults
                     || settings.calculator != oldValue.calculator
@@ -46,15 +54,40 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// The text in the field, kept while the panel is hidden.
     public var query: String { panel.field.stringValue }
 
-    let panel = SearchPanel()
+    /// A screen to show a panel on: its frame, and its visible area, where the rows stop.
+    struct Display: Equatable {
+        let frame: NSRect
+        let visible: NSRect
+    }
+
+    /// The panel taking the keys: the one on the focused window's display, or the one clicked
+    /// since.
+    var panel: SearchPanel { slots[keyIndex].panel }
+    /// The panels showing, the one that took the keys at the show first; empty while hidden.
+    var shownPanels: [SearchPanel] { slots.prefix(shownCount).map(\.panel) }
+    /// The rows' views of every panel made, in `slots` order.
+    var rowsViews: [ResultListHostingView] { slots.map(\.rows) }
     let state = SearchState()
     let icons: IconCache
-    private(set) var rowsView: ResultListHostingView!
     /// Speaks to VoiceOver: the results after each search, the row selected after each move.
     var announce: @MainActor (String) -> Void = SearchPanelController.postAnnouncement
-    /// The visible area of the screen the panel last showed on; the rows stop at its bottom.
-    /// Nil before the first show.
-    private var visibleFrame: NSRect?
+    /// A panel with its rows, and the visible area of the screen it last showed on, where its
+    /// rows stop; nil before its first show.
+    private struct Slot {
+        let panel: SearchPanel
+        let rows: ResultListHostingView
+        var visible: NSRect?
+    }
+
+    /// The panels made so far, the first at init and one more for each further display shown
+    /// on at once. Kept while hidden, so a show doesn't make them again.
+    private var slots: [Slot] = []
+    /// How many of `slots`, from the first, show; 0 while hidden.
+    private var shownCount = 0
+    /// The index in `slots` of the panel taking the keys.
+    private var keyIndex = 0
+    /// How many of `slots`, from the first, `prepare()` has drawn.
+    private var preparedCount = 0
     /// The open of the config file ⌘, started last, for tests to wait on.
     private(set) var configFileOpened: Task<Void, Never>?
     /// `usage`'s frecencies as of the last show, so a keystroke only looks them up.
@@ -104,62 +137,111 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         self.reportError = reportError
         self.ordersPanel = ordersPanel
         super.init()
+        slots = [makeSlot()]
+    }
+
+    /// A panel holding rows that show `state`, its field and keys handled here.
+    private func makeSlot() -> Slot {
+        let panel = SearchPanel()
         let rows = ResultListHostingView(
             rootView: SearchView(state: state, icons: icons) { [weak self] in self?.open(row: $0) })
         rows.sizingOptions = []
-        rowsView = rows
         panel.install(rows: rows)
         panel.field.delegate = self
         panel.delegate = self
         panel.keyEquivalent = { [weak self] in self?.keyEquivalent($0) ?? false }
+        panel.willTakeKeys = { [weak self] in self?.takeKeys(in: $0) }
+        return Slot(panel: panel, rows: rows)
     }
 
     // MARK: Showing
 
     /// Shows the panel on the screen with the frontmost app's frontmost window, the last query
-    /// selected in the field.
+    /// selected in the field; with `showOnAllDisplays`, on every other screen as well.
     public func show() {
-        guard let screen = FocusedScreen.current() else {
+        guard let focused = FocusedScreen.current() else {
             preconditionFailure("there is no screen to show the panel on")
         }
-        show(onScreen: screen.frame, visible: screen.visibleFrame)
+        show(
+            on: Self.displays(
+                focused: Display(focused), all: NSScreen.screens.map(Display.init),
+                onAll: settings.showOnAllDisplays))
     }
 
-    /// Shows the panel on a screen whose frame is `screen` and whose visible area is `visible`,
-    /// with as many rows as fit above the visible area's bottom.
-    func show(onScreen screen: NSRect, visible: NSRect) {
+    /// The displays a show uses: `focused`, which takes the keys, then with `onAll` the others
+    /// in `all`, in their order. Screens don't overlap, so a frame names one.
+    nonisolated static func displays(focused: Display, all: [Display], onAll: Bool) -> [Display] {
+        guard onAll else { return [focused] }
+        return [focused] + all.filter { $0.frame != focused.frame }
+    }
+
+    /// Shows a panel on each of `displays`, the first taking the keys, each with as many rows
+    /// as fit above its visible area's bottom.
+    func show(on displays: [Display]) {
         guard !isShown else { return }
+        precondition(!displays.isEmpty, "there is no display to show the panel on")
         isShown = true
-        visibleFrame = visible
-        panel.setFrameTopLeftPoint(SearchPanel.topLeft(on: screen))
+        while slots.count < displays.count { slots.append(makeSlot()) }
+        shownCount = displays.count
+        keyIndex = 0
+        for (index, display) in displays.enumerated() {
+            slots[index].visible = display.visible
+            slots[index].panel.setFrameTopLeftPoint(SearchPanel.topLeft(on: display.frame))
+            let fit = rowsThatFit(slots[index])
+            if slots[index].rows.rootView.limit != fit { slots[index].rows.rootView.limit = fit }
+        }
         boost = UsageBoost(usage, at: now())
         search(keepingSelection: true)
         // The field selects its whole text as it takes the keys, so typing replaces the query.
         panel.makeFirstResponder(panel.field)
         guard ordersPanel else { return }
+        for other in shownPanels where other !== panel {
+            other.orderFrontRegardless()
+            other.invalidateShadow()
+        }
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
+    }
+
+    /// Moves the keys to `clicked`, a panel on another display, as a click in it does. The
+    /// query and the selected row stay; the rows are cut to those that fit on its screen.
+    func takeKeys(in clicked: SearchPanel) {
+        guard isShown,
+            let index = slots.prefix(shownCount).firstIndex(where: { $0.panel === clicked }),
+            index != keyIndex
+        else { return }
+        keyIndex = index
+        clicked.makeFirstResponder(clicked.field)
+        search(keepingSelection: true)
     }
 
     /// Orders the panel in fully transparent and out again in the same run-loop turn, so the
     /// window server's window and the first drawing of the backdrop and the field happen now
     /// rather than on the first show, which they slowed from about 6 ms to 37. The panel never
     /// becomes key or visible (docs/decisions/0012-warm-panel.md).
+    /// With `showOnAllDisplays`, a panel for each screen is made and drawn this way, once.
     func prepare() {
         guard ordersPanel, !isShown else { return }
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        panel.displayIfNeeded()
-        panel.orderOut(nil)
-        panel.alphaValue = 1
+        let count = settings.showOnAllDisplays ? NSScreen.screens.count : 1
+        while slots.count < count { slots.append(makeSlot()) }
+        for slot in slots[min(preparedCount, count)..<count] {
+            slot.panel.alphaValue = 0
+            slot.panel.orderFrontRegardless()
+            slot.panel.displayIfNeeded()
+            slot.panel.orderOut(nil)
+            slot.panel.alphaValue = 1
+        }
+        preparedCount = max(preparedCount, count)
     }
 
-    /// Hides the panel, keeping the query for the next show.
+    /// Hides every panel, keeping the query for the next show.
     public func hide() {
         guard isShown else { return }
         isShown = false
+        let shown = shownPanels
+        shownCount = 0
         guard ordersPanel else { return }
-        panel.orderOut(nil)
+        for panel in shown { panel.orderOut(nil) }
     }
 
     public func toggle() {
@@ -192,7 +274,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         if settings.calculator, let item = calculator.item(for: query) {
             rows.append(SearchState.Row(item: item, ranges: []))
         }
-        let limit = min(settings.maxResults, rowsThatFit)
+        let limit = min(settings.maxResults, rowsThatFit(slots[keyIndex]))
         let room = max(limit - rows.count, 0)
         rows += index.results(for: query, limit: room, usage: boost).map {
             SearchState.Row(item: $0.item, ranges: $0.ranges)
@@ -211,13 +293,20 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
                 guard case .file(let path) = ResultRow.icon(for: $0.item) else { return nil }
                 return path
             })
-        panel.fit(rows: rows.count)
+        for slot in slots.prefix(shownCount) {
+            // Programmatic changes don't reach the delegate, so this doesn't search again.
+            if slot.panel !== panel, slot.panel.field.stringValue != query {
+                slot.panel.field.stringValue = query
+            }
+            slot.panel.fit(rows: min(rows.count, rowsThatFit(slot)))
+        }
     }
 
-    /// The rows with room between the panel's top and the bottom of the screen's visible area.
-    private var rowsThatFit: Int {
-        guard let visibleFrame else { return .max }
-        return SearchPanel.rows(fitting: panel.frame.maxY - visibleFrame.minY)
+    /// The rows with room between `slot`'s panel's top and the bottom of its screen's visible
+    /// area.
+    private func rowsThatFit(_ slot: Slot) -> Int {
+        guard let visible = slot.visible else { return .max }
+        return SearchPanel.rows(fitting: slot.panel.frame.maxY - visible.minY)
     }
 
     private var selectedRow: SearchState.Row? {
@@ -430,8 +519,17 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     // MARK: Window
 
-    /// A click elsewhere, or another app coming forward, takes the keys: the panel hides.
+    /// A click elsewhere, or another app coming forward, takes the keys: every panel hides. A
+    /// click in another display's panel has moved the keys to it first, and the panel that
+    /// resigns them is no longer the one taking them, so nothing hides.
     public func windowDidResignKey(_ notification: Notification) {
+        guard (notification.object as? SearchPanel) === panel else { return }
         hide()
+    }
+}
+
+extension SearchPanelController.Display {
+    init(_ screen: NSScreen) {
+        self.init(frame: screen.frame, visible: screen.visibleFrame)
     }
 }

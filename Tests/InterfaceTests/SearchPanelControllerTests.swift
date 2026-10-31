@@ -626,7 +626,7 @@ extension Fixture {
     fixture.controller.hide()
     let screen = NSRect(x: 0, y: 0, width: 800, height: 250)
     let visible = NSRect(x: 0, y: 0, width: 800, height: 225)
-    fixture.controller.show(onScreen: screen, visible: visible)
+    fixture.controller.show(on: [SearchPanelController.Display(frame: screen, visible: visible)])
 
     try fixture.type("s")
 
@@ -635,6 +635,147 @@ extension Fixture {
     try fixture.down()
     try fixture.down()
     #expect(fixture.selection == 1)
+}
+
+// MARK: All displays
+
+/// Three screens in a row: a tall one, the primary, a short one that fits two rows, and another
+/// tall one. AppKit frames; each visible area leaves out a menu bar.
+private let tall = SearchPanelController.Display(
+    frame: NSRect(x: 0, y: 0, width: 1600, height: 1000),
+    visible: NSRect(x: 0, y: 0, width: 1600, height: 975))
+private let short = SearchPanelController.Display(
+    frame: NSRect(x: 1600, y: 0, width: 800, height: 250),
+    visible: NSRect(x: 1600, y: 0, width: 800, height: 225))
+private let otherTall = SearchPanelController.Display(
+    frame: NSRect(x: 2400, y: 0, width: 1600, height: 1000),
+    visible: NSRect(x: 2400, y: 0, width: 1600, height: 975))
+
+extension Fixture {
+    /// Hides the panel and shows it on `displays`, the first taking the keys.
+    func show(on displays: [SearchPanelController.Display]) {
+        controller.hide()
+        controller.show(on: displays)
+    }
+
+    var shown: [SearchPanel] { controller.shownPanels }
+}
+
+@Test func onlyTheFocusedDisplayIsUsedUnlessShowingOnAll() {
+    let all = [tall, short, otherTall]
+
+    #expect(SearchPanelController.displays(focused: short, all: all, onAll: false) == [short])
+    #expect(
+        SearchPanelController.displays(focused: short, all: all, onAll: true)
+            == [short, tall, otherTall])
+}
+
+@MainActor @Test func showingOnEveryDisplayPutsAPanelOnEachWithTheKeysOnTheFirst() throws {
+    let fixture = Fixture()
+
+    fixture.show(on: [otherTall, tall, short])
+
+    #expect(fixture.shown.count == 3)
+    #expect(Set(fixture.shown.map(ObjectIdentifier.init)).count == 3)
+    #expect(
+        fixture.shown.map(\.frame.minX)
+            == [otherTall, tall, short].map { SearchPanel.topLeft(on: $0.frame).x })
+    #expect(fixture.controller.panel === fixture.shown[0])
+    #expect(try fixture.editor.delegate === fixture.shown[0].field)
+}
+
+@MainActor @Test func everyPanelShowsTheSameQueryAndRows() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+
+    try fixture.type("saf")
+
+    #expect(fixture.shown.map(\.field.stringValue) == ["saf", "saf"])
+    #expect(
+        fixture.shown.map(\.frame.height) == Array(repeating: SearchPanel.height(rows: 2), count: 2)
+    )
+    #expect(
+        fixture.controller.rowsViews.allSatisfy { $0.rootView.state === fixture.controller.state })
+
+    try fixture.press("\u{1B}", keyCode: 53)
+    #expect(fixture.shown.map(\.field.stringValue) == ["", ""])
+}
+
+/// The rows the keys move through are the ones the panel taking the keys has room for; a
+/// panel on a shorter screen shows as many of them as fit there.
+@MainActor @Test func eachPanelShowsTheRowsItsScreenHasRoomFor() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, short])
+
+    try fixture.type("s")
+
+    let count = fixture.titles.count
+    #expect(count > 2)
+    #expect(fixture.shown[0].frame.height == SearchPanel.height(rows: count))
+    #expect(fixture.shown[1].frame.height == SearchPanel.height(rows: 2))
+    #expect(
+        fixture.controller.rowsViews.prefix(2).map(\.rootView.limit)
+            == [SearchPanel.rows(fitting: tall.frame.height * (1 - SearchPanel.topShare)), 2])
+}
+
+@MainActor @Test func hidingHidesEveryPanel() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, short, otherTall])
+
+    try fixture.press("\u{1B}", keyCode: 53)
+
+    #expect(!fixture.controller.isShown)
+    #expect(fixture.shown.isEmpty)
+}
+
+/// A click in another display's panel moves the keys there, and the panel it took them from
+/// stays, as do the query and the selection.
+@MainActor @Test func aClickInAnotherPanelMovesTheKeysToIt() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+    try fixture.type("saf")
+    try fixture.down()
+    let first = fixture.shown[0]
+    let second = fixture.shown[1]
+
+    second.willTakeKeys(second)
+    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: first)
+
+    #expect(fixture.controller.isShown)
+    #expect(fixture.controller.panel === second)
+    #expect(try fixture.editor.delegate === second.field)
+    #expect(fixture.selection == 1)
+    try fixture.type("font")
+    #expect(first.field.stringValue == "font")
+    #expect(fixture.titles == ["Font Book"])
+
+    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: second)
+    #expect(!fixture.controller.isShown)
+}
+
+/// Taking the keys on a short screen leaves only the rows that fit there to move through.
+@MainActor @Test func takingTheKeysOnAShortScreenCutsTheRowsToIt() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, short])
+    try fixture.type("s")
+    #expect(fixture.titles.count > 2)
+
+    fixture.shown[1].willTakeKeys(fixture.shown[1])
+
+    #expect(fixture.titles.count == 2)
+    #expect(fixture.shown[0].frame.height == SearchPanel.height(rows: 2))
+}
+
+/// A show on one display after one on several uses only the first panel.
+@MainActor @Test func aLaterShowOnOneDisplayUsesOnePanel() throws {
+    let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
+    fixture.shown[1].willTakeKeys(fixture.shown[1])
+
+    fixture.show(on: [short])
+
+    #expect(fixture.shown.count == 1)
+    #expect(fixture.controller.panel === fixture.shown[0])
 }
 
 // MARK: Layouts
@@ -739,8 +880,10 @@ extension Fixture {
 /// A click makes the view under it first responder only if it accepts that.
 @MainActor @Test func theRowsNeverTakeTheKeysFromTheField() {
     let fixture = Fixture()
+    fixture.show(on: [tall, otherTall])
 
-    #expect(!fixture.controller.rowsView.acceptsFirstResponder)
+    #expect(fixture.controller.rowsViews.count == 2)
+    #expect(fixture.controller.rowsViews.allSatisfy { !$0.acceptsFirstResponder })
 }
 
 // MARK: Accessibility

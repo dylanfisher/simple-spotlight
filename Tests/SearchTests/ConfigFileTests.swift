@@ -51,6 +51,7 @@ private func errors(_ text: String) -> [ConfigError] {
           "appFolders": ["/Apps", "~/More"],
           "excludedApps": ["com.apple.Chess"],
           "maxResults": 20,
+          "showOnAllDisplays": true,
           "launchAtLogin": true
         }
         """
@@ -62,6 +63,7 @@ private func errors(_ text: String) -> [ConfigError] {
     expected.appFolders = ["/Apps", "~/More"]
     expected.excludedApps = ["com.apple.Chess"]
     expected.maxResults = 20
+    expected.showOnAllDisplays = true
     expected.launchAtLogin = true
     #expect(parse(text) == .settings(expected))
 }

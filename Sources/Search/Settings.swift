@@ -15,6 +15,7 @@ public struct Settings: Sendable, Equatable {
     public var appFolders: [String] = Keys.appFolders.defaultValue
     public var excludedApps: [String] = Keys.excludedApps.defaultValue
     public var maxResults: Int = Keys.maxResults.defaultValue
+    public var showOnAllDisplays: Bool = Keys.showOnAllDisplays.defaultValue
     public var launchAtLogin: Bool = Keys.launchAtLogin.defaultValue
 
     /// Every setting at its default.
@@ -91,6 +92,9 @@ extension Settings {
         static let maxResults = Key(
             \.maxResults, "maxResults", .integer(1...20), default: 8,
             "The most rows the panel shows.")
+        static let showOnAllDisplays = Key(
+            \.showOnAllDisplays, "showOnAllDisplays", .bool, default: false,
+            "Show the panel on every display at once, typing in the one you're working on.")
         static let launchAtLogin = Key(
             \.launchAtLogin, "launchAtLogin", .bool, default: false,
             "Open Simple Spotlight when you log in. false removes it from Login Items.")
@@ -98,7 +102,7 @@ extension Settings {
         /// Every key, in the order the default file lists them.
         static let all: [any AnyKey] = [
             hotkey, searchApplications, searchSystemSettings, calculator, appFolders,
-            excludedApps, maxResults, launchAtLogin,
+            excludedApps, maxResults, showOnAllDisplays, launchAtLogin,
         ]
     }
 

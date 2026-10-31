@@ -40,7 +40,8 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   frame. The height fits the rows and the top stays put as rows come and go, so the field
   doesn't jump while typing. The rows stop at the bottom of the screen's visible area: a short
   screen shows fewer rows rather than a panel that runs off it, so the selection never needs
-  scrolling into view.
+  scrolling into view. With `showOnAllDisplays`, a panel shows on every other screen too
+  ([0013](0013-all-displays.md)).
 - **The field is AppKit; the rows are SwiftUI.** An `NSTextField` gets the keys from
   `makeFirstResponder` in the same pass as the show, and its editor's commands (`moveUp:`,
   `moveDown:` with their Ctrl-P/Ctrl-N bindings, `insertNewline:`, `cancelOperation:`) arrive

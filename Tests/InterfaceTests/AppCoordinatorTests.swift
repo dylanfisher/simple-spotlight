@@ -242,6 +242,20 @@ private final class Fixture {
     #expect(fixture.hotKey.registered == [KeyChord(.command, .space), settings.hotkey])
 }
 
+/// A config edit reaches the panel without a relaunch; the next show reads it.
+@MainActor @Test func showOnAllDisplaysReachesThePanel() async {
+    let fixture = Fixture()
+    var settings = Search.Settings()
+    await fixture.apply(settings)
+    #expect(!fixture.panel.settings.showOnAllDisplays)
+
+    settings.showOnAllDisplays = true
+    await fixture.apply(settings)
+
+    #expect(fixture.panel.settings.showOnAllDisplays)
+    #expect(fixture.recorder.builds.count == 1)
+}
+
 @MainActor @Test func rebuildsTheIndexOnlyWhenAnIndexedKeyChanges() async {
     let fixture = Fixture()
     var settings = Search.Settings()

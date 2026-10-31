@@ -9,6 +9,9 @@ final class SearchPanel: NSPanel {
     /// Offered each key equivalent before the panel's views; returns whether it took it. The
     /// app has no menu bar, so nothing else would see a Command chord.
     var keyEquivalent: @MainActor (NSEvent) -> Bool = { _ in false }
+    /// Told, with the panel, when a click is about to make it key, before it does: with a panel
+    /// on each display, the one clicked takes the keys from another, which then resigns them.
+    var willTakeKeys: @MainActor (SearchPanel) -> Void = { _ in }
     let field = NSTextField()
 
     static let width: CGFloat = 680
@@ -144,6 +147,15 @@ final class SearchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if !isKeyWindow, Self.clicks.contains(event.type) { willTakeKeys(self) }
+        super.sendEvent(event)
+    }
+
+    private static let clicks: Set<NSEvent.EventType> = [
+        .leftMouseDown, .rightMouseDown, .otherMouseDown,
+    ]
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         keyEquivalent(event) || super.performKeyEquivalent(with: event)
