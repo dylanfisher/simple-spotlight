@@ -4,15 +4,24 @@ import AppKit
 /// where the user is working, whichever screen the mouse is on.
 @MainActor
 enum FocusedScreen {
+    /// The shortest side, in points, of a window that counts as where the user is working.
+    /// Overlays and 1×1 helper windows are smaller.
+    nonisolated static let minimumSide: CGFloat = 50
+
     /// The screen holding the frontmost app's frontmost window. With no such window, as on the
-    /// desktop or in an app with no windows open, the screen with the menu bar's key focus.
+    /// desktop or in an app with no windows open, the screen with the mouse, then
+    /// `NSScreen.main`, the screen with the menu bar's key focus.
     static func current() -> NSScreen? {
         let screens = NSScreen.screens
-        guard let app = NSWorkspace.shared.frontmostApplication,
+        if let app = NSWorkspace.shared.frontmostApplication,
             let index = index(
                 windows: windowBounds(of: app.processIdentifier), screens: screens.map(\.frame))
-        else { return NSScreen.main }
-        return screens[index]
+        {
+            return screens[index]
+        }
+        // The mouse can sit on the edge between two screens, where no frame contains it.
+        let mouse = NSEvent.mouseLocation
+        return screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
     }
 
     /// The bounds of the on-screen, normal-level, visible windows of the process `pid`, front to
@@ -35,7 +44,8 @@ enum FocusedScreen {
     }
 
     /// The index in `screens` of the screen that the first of `windows` on any screen overlaps
-    /// most; nil when none is on a screen.
+    /// most; nil when none is on a screen. Windows with a side shorter than `minimumSide` are
+    /// passed over.
     ///
     /// - Parameters:
     ///   - windows: Front to back, in the window server's coordinates: origin at the primary
@@ -44,7 +54,7 @@ enum FocusedScreen {
     ///     primary screen first, as `NSScreen.screens` gives them.
     nonisolated static func index(windows: [CGRect], screens: [NSRect]) -> Int? {
         guard let primary = screens.first else { return nil }
-        for window in windows {
+        for window in windows where window.width >= minimumSide && window.height >= minimumSide {
             let flipped = NSRect(
                 x: window.minX, y: primary.height - window.maxY, width: window.width,
                 height: window.height)
