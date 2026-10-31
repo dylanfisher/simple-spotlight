@@ -17,6 +17,8 @@ public final class AppCoordinator {
     public private(set) var settings: Search.Settings?
     /// The build started last, for tests to wait on.
     private(set) var indexBuild: Task<Void, Never>?
+    /// The check of whether to show the conflict alert started last, for tests to wait on.
+    private(set) var noticeDecision: Task<Void, Never>?
 
     private let configFile: URL
     private let commands: CommandProvider
@@ -26,17 +28,20 @@ public final class AppCoordinator {
     private let systemHotKeys: @MainActor () throws -> [SystemHotKey]
     private let conflictNotice: HotKeyConflictNotice
     private let loginItem: LoginItem
+    private let appState: AppStateStore
     private let buildIndex: BuildIndex
     private let quit: @MainActor () -> Void
     private let log: Logger
     private var configErrors: [ConfigError] = []
     private var indexProblems: [IndexProblem] = []
     private var loginItemProblem: SearchItem?
+    private var hotKeyProblem: SearchItem?
 
     /// - Parameters:
     ///   - configFile: Where the config file is, for its error row.
     ///   - makeConfigFile: Gives the config file, creating the default one if it's missing.
     ///   - systemHotKeys: The shortcuts macOS handles itself, checked for the hotkey's chord.
+    ///   - appState: Remembers the chords whose conflict alert the user has seen.
     ///   - ordersPanel: Whether showing puts the panel on screen; tests pass false.
     public init(
         appName: String, configFile: URL, calculator: CalculatorProvider,
@@ -44,7 +49,7 @@ public final class AppCoordinator {
         makeConfigFile: @escaping @MainActor () async throws(ConfigError) -> URL,
         hotKey: any HotKeyRegistrar,
         systemHotKeys: @escaping @MainActor () throws -> [SystemHotKey],
-        conflictNotice: HotKeyConflictNotice, loginItem: LoginItem,
+        conflictNotice: HotKeyConflictNotice, loginItem: LoginItem, appState: AppStateStore,
         buildIndex: @escaping BuildIndex, quit: @escaping @MainActor () -> Void,
         reportError: @escaping @MainActor (any Error) -> Void, log: Logger,
         ordersPanel: Bool = true
@@ -57,6 +62,7 @@ public final class AppCoordinator {
         self.systemHotKeys = systemHotKeys
         self.conflictNotice = conflictNotice
         self.loginItem = loginItem
+        self.appState = appState
         self.buildIndex = buildIndex
         self.quit = quit
         self.log = log
@@ -100,7 +106,7 @@ public final class AppCoordinator {
     /// work.
     public func reopen() {
         log.info("reopened")
-        panel.show()
+        show()
     }
 
     /// Gives the hotkey back and stops the build, before the app quits.
@@ -109,9 +115,29 @@ public final class AppCoordinator {
         indexBuild?.cancel()
     }
 
+    private func hotKeyPressed() {
+        // The press reached the app, so no macOS shortcut holds the chord any more.
+        if hotKeyProblem != nil {
+            hotKeyProblem = nil
+            showProblems()
+        }
+        if panel.isShown { panel.hide() } else { show() }
+    }
+
+    /// Shows the panel, first reading the login item's status again, so a row asking for
+    /// approval goes once the user has approved it in System Settings.
+    private func show() {
+        if let settings {
+            loginItemProblem = loginItem.recheck(settings.launchAtLogin, shown: loginItemProblem)
+            showProblems()
+        }
+        panel.show()
+    }
+
     /// Registers `chord`, telling the user when it won't work: when a macOS shortcut that is
     /// turned on uses it, as Spotlight's uses ⌘Space, or when registering it fails. The chord is
-    /// registered even then, so it works once the user frees it.
+    /// registered even then, so it works once the user frees it. The conflict shows as a row,
+    /// and the first time for the chord, as an alert too.
     private func register(_ chord: KeyChord) {
         var conflict: HotKeyConflict?
         do {
@@ -122,16 +148,29 @@ public final class AppCoordinator {
             log.error("\(String(describing: error), privacy: .public)")
         }
         do throws(HotKeyConflict) {
-            try hotKey.register(chord) { [weak self] in self?.panel.toggle() }
+            try hotKey.register(chord) { [weak self] in self?.hotKeyPressed() }
             log.info("hotkey \(chord.text, privacy: .private) registered")
         } catch {
             conflict = error
         }
+        hotKeyProblem = conflict.map { HotKeyConflictNotice.row(chord, conflict: $0) }
         guard let conflict else { return }
         log.error(
             "hotkey \(chord.text, privacy: .private): \(String(describing: conflict), privacy: .public)"
         )
-        conflictNotice.show(chord, conflict: conflict) { [weak self] in self?.handle($0) }
+        noticeDecision = Task { [weak self, appState, log, conflictNotice] in
+            do {
+                if try await appState.acknowledgedHotKeys().contains(chord.text) { return }
+            } catch {
+                log.error("state file: \(String(describing: error), privacy: .private)")
+            }
+            conflictNotice.show(chord, conflict: conflict) { self?.handle($0) }
+            do {
+                try await appState.acknowledge(hotKey: chord.text)
+            } catch {
+                log.error("state file: \(String(describing: error), privacy: .private)")
+            }
+        }
     }
 
     private func handle(_ choice: HotKeyConflictNotice.Choice) {
@@ -176,7 +215,7 @@ public final class AppCoordinator {
     /// searches again.
     private func showProblems() {
         let rows = [
-            ProblemItems.config(configErrors, file: configFile), loginItemProblem,
+            ProblemItems.config(configErrors, file: configFile), hotKeyProblem, loginItemProblem,
             ProblemItems.index(indexProblems),
         ].compactMap { $0 }
         let shown = { (rows: [SearchItem]) in rows.map { [$0.id, $0.title, $0.subtitle ?? ""] } }

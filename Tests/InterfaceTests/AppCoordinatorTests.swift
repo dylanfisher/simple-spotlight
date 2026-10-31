@@ -47,11 +47,12 @@ private final class StubHotKey: HotKeyRegistrar {
 @MainActor
 private final class StubLoginItem: LoginItemService {
     var status: SMAppService.Status = .notRegistered
+    var statusAfterRegister: SMAppService.Status = .enabled
     private(set) var calls = 0
 
     func register() throws {
         calls += 1
-        status = .enabled
+        status = statusAfterRegister
     }
 
     func unregister() throws {
@@ -95,12 +96,36 @@ private final class Fixture {
     var notices: [HotKeyConflictNotice.Content] = []
     var quits = 0
     var announcements: [String] = []
+    let stateFolder: URL
+    private let ownsStateFolder: Bool
     private(set) var coordinator: AppCoordinator!
 
-    init(problems: [IndexProblem] = []) {
+    deinit {
+        guard ownsStateFolder, FileManager.default.fileExists(atPath: stateFolder.path) else {
+            return
+        }
+        do {
+            try FileManager.default.removeItem(at: stateFolder)
+        } catch {
+            Issue.record(error, "removing \(stateFolder.path)")
+        }
+    }
+
+    /// - Parameters:
+    ///   - state: The folder of the state file; a new one is made and removed when nil.
+    ///   - buildIndex: Builds the index; the recorder's build when nil.
+    init(
+        problems: [IndexProblem] = [], state: URL? = nil,
+        buildIndex: AppCoordinator.BuildIndex? = nil
+    ) {
         _ = NSApplication.shared
         recorder = BuildRecorder(items: [safari], problems: problems)
         let recorder = recorder
+        stateFolder =
+            state
+            ?? FileManager.default.temporaryDirectory.appending(
+                path: "simple-spotlight-\(UUID().uuidString)", directoryHint: .isDirectory)
+        ownsStateFolder = state == nil
         coordinator = AppCoordinator(
             appName: "Simple Spotlight", configFile: configURL,
             calculator: CalculatorProvider(locale: Locale(identifier: "en_US")),
@@ -111,7 +136,10 @@ private final class Fixture {
                 [unowned self] content, _ in notices.append(content)
             },
             loginItem: LoginItem(service: loginItem, appName: "Simple Spotlight"),
-            buildIndex: { settings throws(CancellationError) in recorder.build(settings) },
+            appState: AppStateStore(folder: stateFolder),
+            buildIndex: buildIndex ?? { settings throws(CancellationError) in
+                recorder.build(settings)
+            },
             quit: { [unowned self] in quits += 1 },
             reportError: { Issue.record($0) }, log: Logger(.disabled), ordersPanel: false)
         coordinator.panel.announce = { [unowned self] in announcements.append($0) }
@@ -123,6 +151,7 @@ private final class Fixture {
     func apply(_ settings: Search.Settings, errors: [ConfigError] = []) async {
         coordinator.apply(settings: settings, errors: errors)
         await coordinator.indexBuild?.value
+        await coordinator.noticeDecision?.value
     }
 
     func type(_ query: String) throws {
@@ -282,7 +311,7 @@ private final class Fixture {
     #expect(fixture.panel.isShown)
 }
 
-@MainActor @Test func aMacOSShortcutOnTheChordShowsTheNoticeAndStillRegisters() async {
+@MainActor @Test func aMacOSShortcutOnTheChordShowsTheNoticeAndStillRegisters() async throws {
     let fixture = Fixture()
     fixture.systemHotKeys = [
         SystemHotKey(modifiers: KeyChord.Modifiers.command.rawValue, code: 49, isEnabled: true)
@@ -293,6 +322,8 @@ private final class Fixture {
     #expect(fixture.notices.count == 1)
     #expect(fixture.notices.first?.title.contains("⌘Space") == true)
     #expect(fixture.hotKey.registered == [KeyChord(.command, .space)])
+    try fixture.type("")
+    #expect(fixture.titles == ["⌘Space is also Spotlight's shortcut"])
 }
 
 @MainActor @Test func aRefusedChordShowsTheNotice() async {
@@ -343,4 +374,108 @@ private final class Fixture {
     let press = try #require(fixture.hotKey.onPress)
     press()
     #expect(fixture.panel.isShown)
+}
+
+private let spotlightShortcut = SystemHotKey(
+    modifiers: KeyChord.Modifiers.command.rawValue, code: 49, isEnabled: true)
+
+/// With `launchAtLogin` the app starts at each login; the alert would take focus every time.
+@MainActor @Test func theConflictAlertShowsOncePerChordAcrossLaunches() async throws {
+    let first = Fixture()
+    first.systemHotKeys = [spotlightShortcut]
+    await first.apply(Search.Settings())
+    #expect(first.notices.count == 1)
+
+    let second = Fixture(state: first.stateFolder)
+    second.systemHotKeys = [spotlightShortcut]
+    await second.apply(Search.Settings())
+
+    #expect(second.notices.isEmpty)
+    try second.type("")
+    #expect(second.titles == ["⌘Space is also Spotlight's shortcut"])
+}
+
+/// A press proves the chord reaches the app, so the system shortcut has been turned off.
+@MainActor @Test func aPressOfTheHotkeyClearsTheConflictRow() async throws {
+    let fixture = Fixture()
+    fixture.systemHotKeys = [spotlightShortcut]
+    await fixture.apply(Search.Settings())
+
+    let press = try #require(fixture.hotKey.onPress)
+    press()
+
+    #expect(fixture.panel.isShown)
+    #expect(fixture.titles.isEmpty)
+}
+
+@MainActor @Test func stopGivesTheHotkeyBack() async {
+    let fixture = Fixture()
+    await fixture.apply(Search.Settings())
+
+    fixture.coordinator.stop()
+
+    #expect(fixture.hotKey.unregisters == 1)
+    #expect(fixture.hotKey.onPress == nil)
+}
+
+@MainActor @Test func aLoginItemAwaitingApprovalShowsARowUntilApproved() async throws {
+    let fixture = Fixture()
+    fixture.loginItem.statusAfterRegister = .requiresApproval
+    var settings = Search.Settings()
+    settings.launchAtLogin = true
+    await fixture.apply(settings)
+    try fixture.type("")
+    #expect(fixture.titles == ["Allow Simple Spotlight in Login Items to open it at login"])
+    fixture.panel.hide()
+
+    fixture.loginItem.status = .enabled
+    fixture.coordinator.reopen()
+
+    #expect(fixture.titles.isEmpty)
+    #expect(fixture.loginItem.calls == 1)
+}
+
+/// Holds each build until the test lets it finish.
+private actor Gates {
+    private var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var opened: Set<Int> = []
+
+    func wait(_ gate: Int) async {
+        guard !opened.contains(gate) else { return }
+        await withCheckedContinuation { waiting[gate] = $0 }
+    }
+
+    func open(_ gate: Int) {
+        opened.insert(gate)
+        waiting.removeValue(forKey: gate)?.resume()
+    }
+}
+
+@MainActor @Test func anOlderBuildFinishingLastDoesntReplaceANewerIndex() async throws {
+    let gates = Gates()
+    let chess = SearchItem(
+        id: "com.apple.Chess", kind: .app, title: "Chess", subtitle: nil,
+        target: .openFile(URL(filePath: "/System/Applications/Chess.app")))
+    let fixture = Fixture(buildIndex: { settings throws(CancellationError) in
+        // Ignores cancellation, as a build past its last check does.
+        let gate = settings.appFolders == ["/Old"] ? 1 : 2
+        await gates.wait(gate)
+        return IndexBuilder.Build(
+            items: gate == 1 ? [safari] : [chess], problems: [], duration: .zero)
+    })
+    var settings = Search.Settings()
+    settings.appFolders = ["/Old"]
+    fixture.coordinator.apply(settings: settings, errors: [])
+    let older = try #require(fixture.coordinator.indexBuild)
+    settings.appFolders = ["/New"]
+    fixture.coordinator.apply(settings: settings, errors: [])
+    let newer = try #require(fixture.coordinator.indexBuild)
+
+    await gates.open(2)
+    await newer.value
+    await gates.open(1)
+    await older.value
+
+    #expect(fixture.panel.index.items.map(\.title).contains("Chess"))
+    #expect(!fixture.panel.index.items.map(\.title).contains("Safari"))
 }

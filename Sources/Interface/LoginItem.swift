@@ -25,7 +25,9 @@ public struct MainAppLoginItem: LoginItemService {
     }
 }
 
-/// Keeps the login item in step with the `launchAtLogin` setting, and says what stops it.
+/// Keeps the login item in step with the `launchAtLogin` setting, and says what stops it. With
+/// the setting false, a login item for the app is removed, even one the user added by hand in
+/// System Settings.
 @MainActor
 public struct LoginItem {
     /// System Settings' Login Items pane, where the user approves a login item.
@@ -52,11 +54,7 @@ public struct LoginItem {
             if enabled {
                 guard status != .enabled else { return nil }
                 try service.register()
-                guard service.status != .requiresApproval else {
-                    return problem(
-                        "Allow \(appName) in Login Items to open it at login",
-                        subtitle: "Return opens Login Items")
-                }
+                guard service.status != .requiresApproval else { return approvalProblem }
             } else {
                 guard status == .enabled || status == .requiresApproval else { return nil }
                 try service.unregister()
@@ -67,6 +65,24 @@ public struct LoginItem {
                 "\(appName) couldn't \(action)", subtitle: error.localizedDescription)
         }
         return nil
+    }
+
+    /// The row `shown` becomes as the login item stands now, read without registering anything:
+    /// gone once it is as `enabled` asks, as after the user approves it in System Settings.
+    /// Cheap enough to call each time the panel shows.
+    public func recheck(_ enabled: Bool, shown: SearchItem?) -> SearchItem? {
+        guard let shown else { return nil }
+        switch (enabled, service.status) {
+        case (true, .enabled), (false, .notRegistered), (false, .notFound): return nil
+        case (true, .requiresApproval): return approvalProblem
+        default: return shown
+        }
+    }
+
+    private var approvalProblem: SearchItem {
+        problem(
+            "Allow \(appName) in Login Items to open it at login",
+            subtitle: "Return opens Login Items")
     }
 
     private func problem(_ title: String, subtitle: String) -> SearchItem {

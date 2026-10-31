@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotKey: HotKey(), systemHotKeys: { try HotKey.systemHotKeys() },
             conflictNotice: HotKeyConflictNotice(appName: appName),
             loginItem: LoginItem(service: MainAppLoginItem(), appName: appName),
+            appState: AppStateStore(folder: AppSupport.standardFolder()),
             buildIndex: { settings throws(CancellationError) in
                 try await settings.indexBuilder().build()
             },
@@ -58,8 +59,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    /// Gives the hotkey back and stops the config store's watch before quitting; the store is
+    /// an actor, so the quit waits for it.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         coordinator?.stop()
+        let store = store
+        Task {
+            await store.stop()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// Something the user asked for failed, after the panel hid: an alert says what.

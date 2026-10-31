@@ -96,7 +96,7 @@ extension Settings {
             "The most rows the panel shows.")
         static let launchAtLogin = Key(
             \.launchAtLogin, "launchAtLogin", .bool, default: false,
-            "Open Simple Spotlight when you log in.")
+            "Open Simple Spotlight when you log in. false removes it from Login Items.")
 
         /// Every key, in the order the default file lists them.
         static let all: [any AnyKey] = [

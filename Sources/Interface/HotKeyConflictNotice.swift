@@ -3,7 +3,7 @@ import Carbon
 import Search
 
 /// Tells the user the hotkey won't show the panel, how to free it, and that the config file can
-/// set another; once per chord, so a config reload doesn't show it again.
+/// set another: an alert the first time, and a problem row in the panel for as long as it lasts.
 @MainActor
 public final class HotKeyConflictNotice {
     /// What the user can do from the notice.
@@ -46,22 +46,37 @@ public final class HotKeyConflictNotice {
 
     private let appName: String
     private let present: Present
-    /// The chords the notice has been shown for, as the config file spells them.
-    private var shown: Set<String> = []
 
     public init(appName: String, present: @escaping Present = HotKeyConflictNotice.alert) {
         self.appName = appName
         self.present = present
     }
 
-    /// Shows the notice for `chord` and calls `chosen` with the user's choice, unless it was
-    /// shown for `chord` before.
+    /// Shows the alert for `chord` and calls `chosen` with the user's choice.
     public func show(
         _ chord: KeyChord, conflict: HotKeyConflict,
         chosen: @escaping @MainActor (Choice) -> Void
     ) {
-        guard shown.insert(chord.text).inserted else { return }
         present(Self.content(chord, conflict: conflict, appName: appName), chosen)
+    }
+
+    /// The problem row for the conflict. Return opens Keyboard Shortcuts for a macOS shortcut,
+    /// and the config file for a chord another app holds.
+    public static func row(_ chord: KeyChord, conflict: HotKeyConflict) -> SearchItem {
+        switch conflict {
+        case .systemShortcut:
+            let owner =
+                spotlightShortcuts.contains { $0.chord == chord }
+                ? "Spotlight's shortcut" : "a macOS shortcut"
+            return ProblemItems.row(
+                .hotKey, title: "\(chord) is also \(owner)",
+                subtitle: "Return opens Keyboard Shortcuts", target: .openURL(keyboardShortcutsURL))
+        case .refused:
+            return ProblemItems.row(
+                .hotKey, title: "Another app uses \(chord)",
+                subtitle: "Set another \"hotkey\" in the config file. Return opens it.",
+                target: .command(CommandProvider.Command.openConfig.id))
+        }
     }
 
     static func content(_ chord: KeyChord, conflict: HotKeyConflict, appName: String) -> Content {
