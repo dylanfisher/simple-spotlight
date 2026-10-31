@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Shows and hides the search panel, searches the current index and the calculator on each
 /// keystroke, and handles the panel's keys: the arrows and Ctrl-N/P move the selection, Return
-/// opens, ⌘Return reveals, ⌘1…⌘9 open a row, ⌘C copies a calculator answer, Esc clears then
-/// hides, ⌘, opens the config file and ⌘Q quits, whatever the keyboard layout (docs/decisions/0008-search-panel-window.md).
+/// opens, ⌘Return reveals in Finder, ⌘1…⌘9 open a row, ⌘C copies the field's selected text or
+/// else the selected row's path, URL or answer, Esc clears then hides, ⌘, opens the config file
+/// and ⌘Q quits, whatever the keyboard layout (docs/decisions/0008-search-panel-window.md).
 ///
 /// A keystroke searches on the main actor: the index answers in well under a millisecond, so a
 /// hop off it would cost more than the search.
@@ -330,7 +331,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         case .quit:
             quit()
         case .copy:
-            copySelectionOrAnswer()
+            copySelectionOrRow()
         case .cut:
             cutSelection()
         case .paste:
@@ -351,17 +352,31 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         return ((editor.string as NSString).substring(with: range), range)
     }
 
-    /// ⌘C: the selected text in the field when there is some; otherwise the answer of a selected
-    /// calculator row. With neither, nothing.
-    private func copySelectionOrAnswer() {
+    /// ⌘C: the selected text in the field when there is some; otherwise what the selected row
+    /// copies, if anything. The panel stays.
+    private func copySelectionOrRow() {
         if let selected = selectedText {
             opener.copy(selected.text)
             return
         }
-        guard let item = selectedRow?.item, item.kind == .calculation,
-            case .copyText(let text) = item.target
-        else { return }
+        guard let item = selectedRow?.item, let text = Self.copiedText(for: item) else { return }
         opener.copy(text)
+    }
+
+    /// What ⌘C copies from `item`'s row: an app's path, a pane's `x-apple.systempreferences:` URL
+    /// or a `.prefPane`'s path, a calculator answer as Return copies it. Nil for a command or a
+    /// problem.
+    private static func copiedText(for item: SearchItem) -> String? {
+        switch (item.kind, item.target) {
+        case (.command, _), (.problem, _), (_, .command):
+            return nil
+        case (_, .openFile(let url)):
+            return url.path(percentEncoded: false)
+        case (_, .openURL(let url)):
+            return url.absoluteString
+        case (_, .copyText(let text)):
+            return text
+        }
     }
 
     /// ⌘X: copies the field's selected text and deletes it, which searches again.

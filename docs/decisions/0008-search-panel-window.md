@@ -51,10 +51,13 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
 - **Command chords in the panel.** With no menu bar, no Command chord reaches anything unless the
   key window takes it, so `SearchPanel.performKeyEquivalent` offers each to the controller first:
   ⌘Return (and ⌘ keypad Enter), ⌘1…⌘9, ⌘, and ⌘Q, plus ⌘X, ⌘C, ⌘V and ⌘A for the field, which
-  would otherwise not work. ⌘C copies the field's selected text when there is some, else a
-  selected calculator row's answer, else nothing. Cut, copy and paste go through
-  `ResultOpener`, so tests never touch the user's clipboard; a paste's line breaks become
-  spaces. Undo is not wired.
+  would otherwise not work. ⌘C copies the field's selected text when there is some, else what
+  the selected row points at, and the panel stays: an app's path, a calculator answer as Return
+  copies it, nothing for a command or a problem. A System Settings pane copies its
+  `x-apple.systempreferences:` URL (a `.prefPane` its path), since that works pasted into a
+  link, a browser or `open`, and the pane's name is in the field already. Cut, copy and paste
+  go through `ResultOpener`, so tests never touch the user's clipboard; a paste's line breaks
+  become spaces. Undo is not wired.
 - **Chords on any keyboard layout.** Digits match by key code, since AZERTY's digit keys type
   punctuation without Shift. Letters and the comma match the character the layout types, so ⌘A
   is the key labeled A on AZERTY too; when the layout types no ASCII there, as Cyrillic layouts

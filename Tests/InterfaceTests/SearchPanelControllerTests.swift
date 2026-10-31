@@ -423,10 +423,52 @@ extension Fixture {
     #expect(fixture.controller.isShown)
 }
 
-@MainActor @Test func commandCWithNothingSelectedOnAnAppRowCopiesNothing() throws {
+@MainActor @Test func commandCWithNothingSelectedCopiesTheSelectedAppsPath() throws {
     let fixture = Fixture()
     try fixture.type("saf")
+    try fixture.down()
+    try fixture.editor.setSelectedRange(NSRange(location: 3, length: 0))
 
+    #expect(try fixture.command("c", keyCode: 8))
+
+    #expect(fixture.opener.calls == [.copy("/Applications/Microsoft Safety Scanner.app")])
+    #expect(fixture.controller.isShown)
+    #expect(fixture.recorded.isEmpty)
+}
+
+/// A pane copies the URL that opens it, which works in a link, a browser or `open`; its name is
+/// in the field already (docs/decisions/0008-search-panel-window.md).
+@MainActor @Test func commandCWithNothingSelectedCopiesTheSelectedPanesURL() throws {
+    let prefPaneURL = URL(filePath: "/Library/PreferencePanes/Thing.prefPane")
+    let prefPane = SearchItem(
+        id: "/Library/PreferencePanes/Thing.prefPane", kind: .settingsPane, title: "Thing",
+        subtitle: nil, target: .openFile(prefPaneURL))
+    let fixture = Fixture(items: [bluetooth, prefPane])
+    try fixture.type("bluetooth")
+    try fixture.editor.setSelectedRange(NSRange(location: 9, length: 0))
+    #expect(try fixture.command("c", keyCode: 8))
+    try fixture.type("thing")
+    try fixture.editor.setSelectedRange(NSRange(location: 5, length: 0))
+    #expect(try fixture.command("c", keyCode: 8))
+
+    #expect(
+        fixture.opener.calls == [
+            .copy("x-apple.systempreferences:com.apple.BluetoothSettings"),
+            .copy("/Library/PreferencePanes/Thing.prefPane"),
+        ])
+}
+
+/// A command and a problem have nothing to copy, though a problem's row may copy its text
+/// when opened.
+@MainActor @Test func commandCWithNothingSelectedOnACommandOrProblemCopiesNothing() throws {
+    let fixture = Fixture()
+    try fixture.type("quit")
+    try fixture.editor.setSelectedRange(NSRange(location: 4, length: 0))
+    #expect(try fixture.command("c", keyCode: 8))
+    fixture.controller.leadingItems = [
+        ProblemItems.row(.index, title: "Problem", subtitle: "", target: .copyText("problem"))
+    ]
+    #expect(fixture.titles.first == "Problem")
     #expect(try fixture.command("c", keyCode: 8))
 
     #expect(fixture.opener.calls.isEmpty)

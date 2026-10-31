@@ -17,8 +17,9 @@ shows the panel.
 
 In the panel, type to search apps, System Settings panes and arithmetic (`2^10`, `15% * 80`,
 `sqrt(2)`). Return opens the selected row or copies a calculator answer. ↑ ↓ (or Ctrl-P Ctrl-N)
-move the selection, ⌘1…⌘9 open a row, ⌘Return shows an app in Finder, and Esc clears the query
-or hides the panel. ⌘Q quits; so does the "Quit Simple Spotlight" row.
+move the selection, ⌘1…⌘9 open a row, ⌘Return shows an app in Finder, ⌘C copies an app's path
+(a pane's `x-apple.systempreferences:` link, a calculator answer) when no text is selected, and
+Esc clears the query or hides the panel. ⌘Q quits; so does the "Quit Simple Spotlight" row.
 
 ## Configure
 
