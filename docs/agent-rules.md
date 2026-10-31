@@ -26,6 +26,18 @@ AGENTS.md first; these rules add to it.
 11. Report the commit sha(s), what changed, the tests added and how each failed before the
     change, the gate result, judgement calls, and anything to check by hand.
 
+## When to review
+
+Reviewer agents run only after a **large change**: a step that adds a feature or subsystem, a
+new config key or stored data shape, concurrency or window handling, or a diff over about
+300 lines or across more than one tier. For a large change, run three reviewers in parallel on
+its commits: DRY/SSOT, code audit, and performance (what each covers is in `tmp/plan.md`, under
+"After each step"). Fix the findings that hold up in a follow-up commit before the next step.
+
+Everything else gets no reviewer agents: a fix round after a review, a small feature or tweak,
+a visual adjustment, or docs. The orchestrator reads the diff itself and checks that the gate
+passed. A fix round never triggers another review.
+
 ## Reviewers
 
 1. Read-only: write no product code and commit nothing. Review the commits the orchestrator
