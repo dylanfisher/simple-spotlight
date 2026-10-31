@@ -3,14 +3,21 @@ import Search
 import os
 
 /// Applies each config state to the app: registers the hotkey, builds the index off the main
-/// actor and swaps it into the panel, follows `launchAtLogin`, and shows what is wrong as rows
-/// above the results. Each part runs only when its settings change
-/// (docs/decisions/0009-app-wiring.md).
+/// actor and swaps it into the panel, rebuilding it when the folders it reads change, follows
+/// `launchAtLogin`, and shows what is wrong as rows above the results. Each part runs only when
+/// its settings change (docs/decisions/0009-app-wiring.md). Loads usage at launch and records
+/// each open (docs/decisions/0010-usage-ranking.md).
 @MainActor
 public final class AppCoordinator {
     /// Builds the index the settings ask for, off the main actor; throws when cancelled.
     public typealias BuildIndex =
         @Sendable (Search.Settings) async throws(CancellationError) -> IndexBuilder.Build
+    /// Starts watching the folders the index for the settings reads, calling `onChange` at the
+    /// end of each burst of changes in them, and returns what stops the watch
+    /// (docs/decisions/0011-live-index.md).
+    public typealias WatchIndex =
+        @MainActor (Search.Settings, _ onChange: @escaping @Sendable @MainActor () -> Void)
+        -> @MainActor () -> Void
 
     public private(set) var panel: SearchPanelController!
     /// The settings last applied; nil before the first.
@@ -19,6 +26,9 @@ public final class AppCoordinator {
     private(set) var indexBuild: Task<Void, Never>?
     /// The check of whether to show the conflict alert started last, for tests to wait on.
     private(set) var noticeDecision: Task<Void, Never>?
+    /// The load or record of usage started last, which waits for the one before, so the panel
+    /// gets the store's usage in the order of the changes. For tests to wait on.
+    private(set) var usageUpdate: Task<Void, Never>?
 
     private let configFile: URL
     private let commands: CommandProvider
@@ -30,6 +40,10 @@ public final class AppCoordinator {
     private let loginItem: LoginItem
     private let appState: AppStateStore
     private let buildIndex: BuildIndex
+    private let watchIndex: WatchIndex
+    private let usage: UsageStore
+    private let now: @Sendable () -> Date
+    private var stopWatch: (@MainActor () -> Void)?
     private let quit: @MainActor () -> Void
     private let log: Logger
     private var configErrors: [ConfigError] = []
@@ -42,6 +56,8 @@ public final class AppCoordinator {
     ///   - makeConfigFile: Gives the config file, creating the default one if it's missing.
     ///   - systemHotKeys: The shortcuts macOS handles itself, checked for the hotkey's chord.
     ///   - appState: Remembers the chords whose conflict alert the user has seen.
+    ///   - usage: Holds what the user has opened; loaded now, off the main actor.
+    ///   - now: The time an open is recorded at and usage decays to.
     ///   - ordersPanel: Whether showing puts the panel on screen; tests pass false.
     public init(
         appName: String, configFile: URL, calculator: CalculatorProvider,
@@ -50,7 +66,8 @@ public final class AppCoordinator {
         hotKey: any HotKeyRegistrar,
         systemHotKeys: @escaping @MainActor () throws -> [SystemHotKey],
         conflictNotice: HotKeyConflictNotice, loginItem: LoginItem, appState: AppStateStore,
-        buildIndex: @escaping BuildIndex, quit: @escaping @MainActor () -> Void,
+        buildIndex: @escaping BuildIndex, watchIndex: @escaping WatchIndex, usage: UsageStore,
+        now: @escaping @Sendable () -> Date, quit: @escaping @MainActor () -> Void,
         reportError: @escaping @MainActor (any Error) -> Void, log: Logger,
         ordersPanel: Bool = true
     ) {
@@ -64,13 +81,18 @@ public final class AppCoordinator {
         self.loginItem = loginItem
         self.appState = appState
         self.buildIndex = buildIndex
+        self.watchIndex = watchIndex
+        self.usage = usage
+        self.now = now
         self.quit = quit
         self.log = log
         panel = SearchPanelController(
             index: SearchIndex(items: commands.items), settings: Search.Settings(),
             calculator: calculator, opener: opener, icons: icons, configFile: makeConfigFile,
-            runCommand: { [weak self] in self?.run(command: $0) }, quit: quit,
+            runCommand: { [weak self] in self?.run(command: $0) },
+            recordOpen: { [weak self] in self?.recordOpen($0) }, now: now, quit: quit,
             reportError: reportError, ordersPanel: ordersPanel)
+        updateUsage { usage in try await usage.load(at: now()) }
     }
 
     /// Applies the config file's settings and errors. The hotkey is registered first, so it is
@@ -82,6 +104,8 @@ public final class AppCoordinator {
             register(new.hotkey)
         }
         if old?.indexKeys != new.indexKeys {
+            stopWatch?()
+            stopWatch = watchIndex(new) { [weak self] in self?.indexFoldersChanged() }
             rebuildIndex(for: new)
         }
         if old?.launchAtLogin != new.launchAtLogin {
@@ -109,10 +133,23 @@ public final class AppCoordinator {
         show()
     }
 
-    /// Gives the hotkey back and stops the build, before the app quits.
+    /// Gives the hotkey back and stops the watch and the build, before the app quits.
     public func stop() {
         hotKey.unregister()
+        stopWatch?()
+        stopWatch = nil
         indexBuild?.cancel()
+    }
+
+    /// Writes the opens still waiting to be, once the usage updates before have run, as the
+    /// app does before it quits.
+    public func flushUsage() async {
+        await usageUpdate?.value
+        do {
+            try await usage.flush()
+        } catch {
+            log.error("usage file: \(String(describing: error), privacy: .private)")
+        }
     }
 
     private func hotKeyPressed() {
@@ -197,6 +234,12 @@ public final class AppCoordinator {
         }
     }
 
+    private func indexFoldersChanged() {
+        guard let settings else { return }
+        log.info("index folders changed")
+        rebuildIndex(for: settings)
+    }
+
     private func install(_ build: IndexBuilder.Build) {
         log.info(
             "index built: \(build.items.count) items, \(build.problems.count) problems in \(String(describing: build.duration), privacy: .public)"
@@ -221,6 +264,27 @@ public final class AppCoordinator {
         let shown = { (rows: [SearchItem]) in rows.map { [$0.id, $0.title, $0.subtitle ?? ""] } }
         guard shown(rows) != shown(panel.leadingItems) else { return }
         panel.leadingItems = rows
+    }
+
+    private func recordOpen(_ id: String) {
+        let date = now()
+        updateUsage { usage in try await usage.record(id, at: date) }
+    }
+
+    /// Runs `change` on the usage store after the change started before it, and gives the
+    /// panel the usage it returns.
+    private func updateUsage(
+        _ change: @escaping @Sendable (UsageStore) async throws -> UsageStore.Usage
+    ) {
+        usageUpdate = Task { [weak self, previous = usageUpdate, usage, log] in
+            await previous?.value
+            do {
+                let updated = try await change(usage)
+                self?.panel.usage = updated
+            } catch {
+                log.error("usage file: \(String(describing: error), privacy: .private)")
+            }
+        }
     }
 
     private func run(command id: String) {

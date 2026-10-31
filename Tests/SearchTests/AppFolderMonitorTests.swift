@@ -68,14 +68,46 @@ private final class FakeWatch: @unchecked Sendable {
     var stopped: Int { lock.withLock { stops } }
 }
 
-@Test func stopEndsTheWatch() throws {
+@Test func stopEndsTheWatch() async throws {
     let fake = FakeWatch()
-    let monitor = try AppFolderMonitor(folders: [], watch: fake.watch) {}
+    let monitor = AppFolderMonitor(
+        folders: [], watch: fake.watch, failed: { Issue.record($0) }, onChange: {})
+    await monitor.started?.value
 
     monitor.stop()
     monitor.stop()
 
     #expect(fake.stopped == 1)
+}
+
+@Test func aStopBeforeTheWatchStartsStopsItOnceStarted() async throws {
+    let fake = FakeWatch()
+    let monitor = AppFolderMonitor(
+        folders: [], watch: fake.watch, failed: { Issue.record($0) }, onChange: {})
+    monitor.stop()
+    await monitor.started?.value
+
+    #expect(fake.stopped == 1)
+}
+
+private struct Refused: Error {}
+
+@Test func aWatchThatWontStartIsReported() async throws {
+    let failures = Failures()
+    let monitor = AppFolderMonitor(
+        folders: [], watch: { _, _ in throw Refused() }, failed: { failures.add($0) },
+        onChange: {})
+    await monitor.started?.value
+
+    #expect(failures.count == 1)
+}
+
+private final class Failures: @unchecked Sendable {
+    private let lock = NSLock()
+    private var errors: [any Error] = []
+
+    func add(_ error: any Error) { lock.withLock { errors.append(error) } }
+    var count: Int { lock.withLock { errors.count } }
 }
 
 /// Rebuilds the index of the apps in one folder at each report of a monitor on it, and lets a
@@ -84,24 +116,25 @@ private final class LiveIndex: Sendable {
     let monitor: AppFolderMonitor
     private let builds: AsyncStream<[String]>
 
-    init(apps folder: URL) throws {
+    init(apps folder: URL) {
         let builder = IndexBuilder(
             apps: AppProvider(folders: [folder], languages: ["en"], extraApps: []),
             settingsPanes: SettingsPaneProvider(
                 extensionFolders: [], preferencePaneFolders: [], languages: ["en"]))
         let (builds, feed) = AsyncStream.makeStream(of: [String].self)
         self.builds = builds
-        monitor = try AppFolderMonitor(
-            folders: builder.watchedFolders, quiet: .milliseconds(50)
-        ) {
-            Task {
-                do {
-                    feed.yield(try await builder.build().items.map(\.id))
-                } catch {
-                    Issue.record(error)
+        monitor = AppFolderMonitor(
+            folders: builder.watchedFolders, quiet: .milliseconds(50),
+            failed: { Issue.record($0) },
+            onChange: {
+                Task {
+                    do {
+                        feed.yield(try await builder.build().items.map(\.id))
+                    } catch {
+                        Issue.record(error)
+                    }
                 }
-            }
-        }
+            })
     }
 
     /// Whether a build passing `check` comes within `limit`. FSEvents latency is real time, so
@@ -128,8 +161,9 @@ private final class LiveIndex: Sendable {
 
 @Test func anAppAddedToAWatchedFolderIsIndexedAndRemovingItDropsIt() async throws {
     let folder = try TempFolder()
-    let live = try LiveIndex(apps: folder.url)
+    let live = LiveIndex(apps: folder.url)
     defer { live.monitor.stop() }
+    await live.monitor.started?.value
 
     let app = try makeApp("Fake", in: folder.url, id: "test.fake")
     #expect(await live.builds { $0.contains("test.fake") })
@@ -142,8 +176,9 @@ private final class LiveIndex: Sendable {
 @Test func aFolderMadeAfterTheWatchStartsIsWatched() async throws {
     let root = try TempFolder()
     let folder = root.url.appending(path: "Apps", directoryHint: .isDirectory)
-    let live = try LiveIndex(apps: folder)
+    let live = LiveIndex(apps: folder)
     defer { live.monitor.stop() }
+    await live.monitor.started?.value
 
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try makeApp("Fake", in: folder, id: "test.fake")

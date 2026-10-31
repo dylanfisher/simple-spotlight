@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log: Logger
     private let appName: String
     private let store = ConfigStore(folder: ConfigStore.standardFolder())
+    private let usage: UsageStore
     private var coordinator: AppCoordinator?
 
     init(bundle: Bundle) {
@@ -18,8 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else {
             preconditionFailure("run the app as a bundle with an ID and a name: ./scripts/dev")
         }
-        log = Logger(subsystem: id, category: "app")
+        let log = Logger(subsystem: id, category: "app")
+        self.log = log
         appName = name
+        usage = UsageStore(folder: AppSupport.standardFolder()) { error in
+            log.error("usage file: \(String(describing: error), privacy: .private)")
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -39,6 +44,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             buildIndex: { settings throws(CancellationError) in
                 try await settings.indexBuilder().build()
             },
+            watchIndex: { settings, onChange in
+                let monitor = AppFolderMonitor(
+                    folders: settings.indexBuilder().watchedFolders,
+                    failed: { error in
+                        log.error(
+                            "index folders aren't watched: \(String(describing: error), privacy: .private)"
+                        )
+                    },
+                    onChange: { Task { @MainActor in onChange() } })
+                return { monitor.stop() }
+            },
+            usage: usage, now: { Date() },
             quit: { NSApplication.shared.terminate(nil) }, reportError: reportError, log: log)
         self.coordinator = coordinator
         // Launch doesn't wait for the file: the store reads it off the main actor, and each
@@ -59,13 +76,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Gives the hotkey back and stops the config store's watch before quitting; the store is
-    /// an actor, so the quit waits for it.
+    /// Gives the hotkey back, stops the config store's watch and writes the usage file before
+    /// quitting; the stores are actors, so the quit waits for them.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         coordinator?.stop()
         let store = store
+        let coordinator = coordinator
         Task {
             await store.stop()
+            await coordinator?.flushUsage()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

@@ -3,8 +3,8 @@ import Foundation
 
 /// Turns a query that is an arithmetic expression into the calculator's row.
 public struct CalculatorProvider: Sendable {
-    /// The id of every calculator row, whatever the expression, so usage counts the calculator
-    /// once rather than once per expression typed.
+    /// The id of every calculator row, whatever the expression. Usage doesn't count it
+    /// (docs/decisions/0010-usage-ranking.md).
     public static let itemID = "calculator"
 
     /// Sets the separators of the row's title. The copied answer is the same in every locale.

@@ -31,6 +31,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     public var leadingItems: [SearchItem] = [] {
         didSet { search(keepingSelection: true) }
     }
+    /// What the user has opened, which ranks the results (docs/decisions/0010-usage-ranking.md).
+    /// Setting it searches again, as setting `index` does.
+    public var usage = UsageStore.Usage() {
+        didSet {
+            boost = UsageBoost(usage, at: now())
+            search(keepingSelection: true)
+        }
+    }
     public private(set) var isShown = false
     /// The text in the field, kept while the panel is hidden.
     public var query: String { panel.field.stringValue }
@@ -46,8 +54,12 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private var visibleFrame: NSRect?
     /// The open of the config file ⌘, started last, for tests to wait on.
     private(set) var configFileOpened: Task<Void, Never>?
+    /// `usage`'s frecencies as of the last show, so a keystroke only looks them up.
+    private var boost = UsageBoost.none
     private let calculator: CalculatorProvider
     private let opener: any ResultOpener
+    private let recordOpen: @MainActor (String) -> Void
+    private let now: @MainActor () -> Date
     private let configFile: @MainActor () async throws(ConfigError) -> URL
     private let runCommand: @MainActor (String) -> Void
     private let quit: @MainActor () -> Void
@@ -58,6 +70,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     ///   - configFile: Gives the config file, creating the default one if it's missing, as
     ///     `ConfigStore.makeDefaultFileIfMissing` does.
     ///   - runCommand: Runs a `.command` row's identifier.
+    ///   - recordOpen: Told the id of each app or System Settings pane opened, to count it in
+    ///     `usage`.
+    ///   - now: The time `usage` decays to when the panel shows.
     ///   - quit: Runs on ⌘Q.
     ///   - reportError: Told when the config file can't be made.
     ///   - ordersPanel: Whether showing puts the panel on screen. Tests pass false, so the panel
@@ -67,6 +82,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         opener: any ResultOpener, icons: IconCache,
         configFile: @escaping @MainActor () async throws(ConfigError) -> URL,
         runCommand: @escaping @MainActor (String) -> Void,
+        recordOpen: @escaping @MainActor (String) -> Void,
+        now: @escaping @MainActor () -> Date,
         quit: @escaping @MainActor () -> Void,
         reportError: @escaping @MainActor (any Error) -> Void,
         ordersPanel: Bool = true
@@ -78,6 +95,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         self.icons = icons
         self.configFile = configFile
         self.runCommand = runCommand
+        self.recordOpen = recordOpen
+        self.now = now
         self.quit = quit
         self.reportError = reportError
         self.ordersPanel = ordersPanel
@@ -112,6 +131,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         isShown = true
         visibleFrame = visible
         panel.setFrameTopLeftPoint(SearchPanel.topLeft(on: screen))
+        boost = UsageBoost(usage, at: now())
         search(keepingSelection: true)
         // The field selects its whole text as it takes the keys, so typing replaces the query.
         panel.makeFirstResponder(panel.field)
@@ -160,7 +180,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         }
         let limit = min(settings.maxResults, rowsThatFit)
         let room = max(limit - rows.count, 0)
-        rows += index.results(for: query, limit: room).map {
+        rows += index.results(for: query, limit: room, usage: boost).map {
             SearchState.Row(item: $0.item, ranges: $0.ranges)
         }
         rows = Array(rows.prefix(limit))
@@ -209,11 +229,13 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     // MARK: Opening
 
     /// Hides the panel and opens the row at `index`: launches an app, opens a pane, copies a
-    /// calculator answer or runs a command. An index past the rows does nothing.
+    /// calculator answer or runs a command. An index past the rows does nothing. Only apps and
+    /// panes count toward usage (docs/decisions/0010-usage-ranking.md).
     func open(row index: Int) {
         guard state.rows.indices.contains(index) else { return }
         let item = state.rows[index].item
         hide()
+        if item.kind == .app || item.kind == .settingsPane { recordOpen(item.id) }
         switch item.target {
         case .openFile(let url) where item.kind == .app:
             opener.openApplication(at: url)

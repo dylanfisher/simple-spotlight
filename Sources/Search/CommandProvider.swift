@@ -6,8 +6,7 @@ public struct CommandProvider: Sendable {
         case openConfig = "config"
         case quit
 
-        /// Both the row's id, which usage is keyed by, and the identifier its `.command` target
-        /// carries.
+        /// Both the row's id and the identifier its `.command` target carries.
         public var id: String { SearchItem.builtInID(rawValue) }
 
         /// The command whose `id` is `id`.

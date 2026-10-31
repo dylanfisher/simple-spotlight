@@ -81,6 +81,22 @@ private final class BuildRecorder: @unchecked Sendable {
     }
 }
 
+/// Records each watch of the index's folders, and keeps the last one's callback.
+@MainActor
+private final class StubWatch {
+    private(set) var watched: [Search.Settings] = []
+    private(set) var stops = 0
+    private(set) var onChange: (@MainActor () -> Void)?
+
+    var watch: AppCoordinator.WatchIndex {
+        { [unowned self] settings, onChange in
+            watched.append(settings)
+            self.onChange = onChange
+            return { [unowned self] in stops += 1 }
+        }
+    }
+}
+
 private let safari = SearchItem(
     id: "com.apple.Safari", kind: .app, title: "Safari", subtitle: nil,
     target: .openFile(URL(filePath: "/Applications/Safari.app")))
@@ -91,7 +107,9 @@ private final class Fixture {
     let opener = StubOpener()
     let hotKey = StubHotKey()
     let loginItem = StubLoginItem()
+    let watch = StubWatch()
     let recorder: BuildRecorder
+    let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     var systemHotKeys: [SystemHotKey] = []
     var notices: [HotKeyConflictNotice.Content] = []
     var quits = 0
@@ -112,14 +130,15 @@ private final class Fixture {
     }
 
     /// - Parameters:
-    ///   - state: The folder of the state file; a new one is made and removed when nil.
+    ///   - state: The folder of the state and usage files; a new one is made and removed when
+    ///     nil.
     ///   - buildIndex: Builds the index; the recorder's build when nil.
     init(
-        problems: [IndexProblem] = [], state: URL? = nil,
+        items: [SearchItem] = [safari], problems: [IndexProblem] = [], state: URL? = nil,
         buildIndex: AppCoordinator.BuildIndex? = nil
     ) {
         _ = NSApplication.shared
-        recorder = BuildRecorder(items: [safari], problems: problems)
+        recorder = BuildRecorder(items: items, problems: problems)
         let recorder = recorder
         stateFolder =
             state
@@ -140,6 +159,9 @@ private final class Fixture {
             buildIndex: buildIndex ?? { settings throws(CancellationError) in
                 recorder.build(settings)
             },
+            watchIndex: watch.watch,
+            usage: UsageStore(folder: stateFolder) { Issue.record($0) },
+            now: { [now] in now },
             quit: { [unowned self] in quits += 1 },
             reportError: { Issue.record($0) }, log: Logger(.disabled), ordersPanel: false)
         coordinator.panel.announce = { [unowned self] in announcements.append($0) }
@@ -159,6 +181,13 @@ private final class Fixture {
         let editor = try #require(panel.panel.firstResponder as? NSTextView)
         editor.insertText(
             query, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+    }
+
+    /// Opens the first result for `query`, and waits for the open to be counted.
+    func open(_ query: String) async throws {
+        try type(query)
+        try pressReturn()
+        await coordinator.usageUpdate?.value
     }
 
     func pressReturn() throws {
@@ -408,7 +437,7 @@ private let spotlightShortcut = SystemHotKey(
     #expect(fixture.titles.isEmpty)
 }
 
-@MainActor @Test func stopGivesTheHotkeyBack() async {
+@MainActor @Test func stopGivesTheHotkeyBackAndStopsTheWatch() async {
     let fixture = Fixture()
     await fixture.apply(Search.Settings())
 
@@ -416,6 +445,71 @@ private let spotlightShortcut = SystemHotKey(
 
     #expect(fixture.hotKey.unregisters == 1)
     #expect(fixture.hotKey.onPress == nil)
+    #expect(fixture.watch.stops == 1)
+}
+
+private let mail = SearchItem(
+    id: "com.apple.mail", kind: .app, title: "Mail", subtitle: nil,
+    target: .openFile(URL(filePath: "/System/Applications/Mail.app")))
+private let maps = SearchItem(
+    id: "com.apple.Maps", kind: .app, title: "Maps", subtitle: nil,
+    target: .openFile(URL(filePath: "/System/Applications/Maps.app")))
+
+@MainActor @Test func aChangeInTheIndexFoldersRebuildsTheIndexKeepingTheQuery() async throws {
+    let fixture = Fixture()
+    await fixture.apply(Search.Settings())
+    try fixture.type("saf")
+    let onChange = try #require(fixture.watch.onChange)
+
+    onChange()
+    await fixture.coordinator.indexBuild?.value
+
+    #expect(fixture.recorder.builds.count == 2)
+    #expect(fixture.panel.query == "saf")
+    #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func watchesTheIndexFoldersAgainOnlyWhenAnIndexedKeyChanges() async {
+    let fixture = Fixture()
+    var settings = Search.Settings()
+    await fixture.apply(settings)
+
+    settings.maxResults = 3
+    await fixture.apply(settings)
+    #expect(fixture.watch.watched.count == 1)
+
+    settings.appFolders = ["/Volumes/Apps"]
+    await fixture.apply(settings)
+    #expect(fixture.watch.watched.map(\.appFolders).last == ["/Volumes/Apps"])
+    #expect(fixture.watch.watched.count == 2)
+    #expect(fixture.watch.stops == 1)
+}
+
+@MainActor @Test func openingAnAppTwiceLiftsItAboveAnEqualMatch() async throws {
+    let fixture = Fixture(items: [mail, maps])
+    await fixture.apply(Search.Settings())
+    try fixture.type("ma")
+    #expect(fixture.titles == ["Mail", "Maps"])
+
+    try await fixture.open("maps")
+    try await fixture.open("maps")
+    try fixture.type("ma")
+
+    #expect(fixture.titles == ["Maps", "Mail"])
+}
+
+@MainActor @Test func usageIsKeptAcrossLaunches() async throws {
+    let first = Fixture(items: [mail, maps])
+    await first.apply(Search.Settings())
+    try await first.open("maps")
+    await first.coordinator.flushUsage()
+
+    let second = Fixture(items: [mail, maps], state: first.stateFolder)
+    await second.apply(Search.Settings())
+    await second.coordinator.usageUpdate?.value
+    try second.type("ma")
+
+    #expect(second.titles == ["Maps", "Mail"])
 }
 
 @MainActor @Test func aLoginItemAwaitingApprovalShowsARowUntilApproved() async throws {

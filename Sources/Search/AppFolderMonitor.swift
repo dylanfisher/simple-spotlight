@@ -68,19 +68,43 @@ public final class AppFolderMonitor: @unchecked Sendable {
     private var burst: Burst
     private var stopped = false
     private var stopWatch: (@Sendable () -> Void)?
+    private var starting: Task<Void, Never>?
 
-    /// Starts watching `folders`, calling `onChange` at the end of each burst of changes.
+    /// Starts watching `folders`, calling `onChange` at the end of each burst of changes. The
+    /// watch starts off the caller's actor, since FSEvents looks the folders up on the disk;
+    /// `failed` is told if it won't.
     public init(
         folders: [URL], quiet: Duration = quiet, longest: Duration = longest,
-        watch: Watch = fileEvents, onChange: @escaping @Sendable () -> Void
-    ) throws {
+        watch: @escaping Watch = fileEvents, failed: @escaping @Sendable (any Error) -> Void,
+        onChange: @escaping @Sendable () -> Void
+    ) {
         self.onChange = onChange
         burst = Burst(quiet: quiet, longest: longest)
-        let stop = try watch(folders) { [weak self] in self?.changed() }
-        lock.withLock { stopWatch = stop }
+        let start = Task.detached { [weak self] in
+            let stop: @Sendable () -> Void
+            do {
+                stop = try watch(folders) { [weak self] in self?.changed() }
+            } catch {
+                failed(error)
+                return
+            }
+            guard let self else {
+                stop()
+                return
+            }
+            let kept = lock.withLock {
+                if !stopped { stopWatch = stop }
+                return !stopped
+            }
+            if !kept { stop() }
+        }
+        lock.withLock { starting = start }
     }
 
-    /// Stops watching. A burst under way is dropped.
+    /// The start of the watch, for tests to wait on.
+    var started: Task<Void, Never>? { lock.withLock { starting } }
+
+    /// Stops watching, or the watch from starting. A burst under way is dropped.
     public func stop() {
         let stop = lock.withLock {
             stopped = true

@@ -49,6 +49,9 @@ private let configURL = URL(filePath: "/tmp/simple-spotlight-test/config.json")
 private final class Fixture {
     let opener = StubOpener()
     var commands: [String] = []
+    /// The ids the controller counted as opened.
+    var recorded: [String] = []
+    var now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     var quits = 0
     var errors: [String] = []
     var announcements: [String] = []
@@ -63,6 +66,8 @@ private final class Fixture {
             opener: opener, icons: IconCache(load: { _ in NSImage() }),
             configFile: { [unowned self] () throws(ConfigError) in try configResult.get() },
             runCommand: { [unowned self] in commands.append($0) },
+            recordOpen: { [unowned self] in recorded.append($0) },
+            now: { [unowned self] in now },
             quit: { [unowned self] in quits += 1 },
             reportError: { [unowned self] in errors.append(String(describing: $0)) },
             ordersPanel: false)
@@ -241,6 +246,7 @@ extension Fixture {
 
     #expect(fixture.opener.calls == [.application(URL(filePath: "/Applications/Safari.app"))])
     #expect(!fixture.controller.isShown)
+    #expect(fixture.recorded == ["com.apple.Safari"])
 }
 
 @MainActor @Test func returnOpensASettingsPaneByItsURL() throws {
@@ -250,6 +256,69 @@ extension Fixture {
     try fixture.press("\r", keyCode: 36)
 
     #expect(fixture.opener.calls == [.open(bluetoothURL)])
+    #expect(fixture.recorded == ["com.apple.BluetoothSettings"])
+}
+
+/// A calculator answer, a command and a problem aren't things the user opens, so they don't
+/// count toward usage (docs/decisions/0010-usage-ranking.md); nor does revealing an app.
+@MainActor @Test func onlyAppsAndPanesCountAsOpened() throws {
+    let fixture = Fixture()
+    fixture.controller.leadingItems = [
+        ProblemItems.row(.index, title: "Problem", subtitle: "", target: .copyText("problem"))
+    ]
+    for query in ["1+1", "quit"] {
+        fixture.controller.show()
+        try fixture.type(query)
+        try fixture.command("2", keyCode: 19)
+    }
+    fixture.controller.show()
+    try fixture.type("problem")
+    try fixture.press("\r", keyCode: 36)
+    fixture.controller.leadingItems = []
+    fixture.controller.show()
+    try fixture.type("saf")
+    try fixture.command("\r", keyCode: 36)
+
+    #expect(fixture.commands == ["quit"])
+    #expect(
+        fixture.opener.calls == [
+            .copy("2"), .copy("problem"), .reveal(URL(filePath: "/Applications/Safari.app")),
+        ])
+    #expect(fixture.recorded.isEmpty)
+}
+
+@MainActor @Test func usageRanksTheResults() throws {
+    let fixture = Fixture()
+    var usage = UsageStore.Usage()
+    usage.record("com.microsoft.scanner", at: fixture.now)
+    fixture.controller.usage = usage
+
+    try fixture.type("saf")
+
+    #expect(fixture.titles == ["Safari", "Microsoft Safety Scanner"])
+    for _ in 1..<Int(UsageBoost.liftingFrecency) {
+        usage.record("com.microsoft.scanner", at: fixture.now)
+    }
+    fixture.controller.usage = usage
+    #expect(fixture.titles == ["Microsoft Safety Scanner", "Safari"])
+}
+
+/// The frecencies are worked out at each show, so usage wears off while the app runs.
+@MainActor @Test func usageDecaysToTheTimeOfEachShow() throws {
+    let fixture = Fixture()
+    var usage = UsageStore.Usage()
+    for _ in 0..<Int(UsageBoost.liftingFrecency) {
+        usage.record("com.microsoft.scanner", at: fixture.now)
+    }
+    fixture.controller.usage = usage
+    try fixture.type("saf")
+    #expect(fixture.titles == ["Microsoft Safety Scanner", "Safari"])
+
+    fixture.controller.hide()
+    fixture.now += UsageBoost.halfLife
+    fixture.controller.show()
+
+    #expect(fixture.titles == ["Safari", "Microsoft Safety Scanner"])
 }
 
 @MainActor @Test func returnOnTheCalculatorRowCopiesThePlainAnswer() throws {
