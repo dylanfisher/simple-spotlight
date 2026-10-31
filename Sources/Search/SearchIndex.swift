@@ -1,10 +1,7 @@
 import Base
 
-/// The items a query is matched against, and the ranking of a query's matches.
-///
-/// Matches rank by `FuzzyMatch.Score`: the kind of match first, then a subsequence's quality.
-/// Equal scores rank by the usage bonus, then the shorter folded title, then the folded titles'
-/// byte order, then the id, so the order never depends on the items' order.
+/// The items a query is matched against, and the ranking of a query's matches, in the order
+/// `precedes` gives.
 public struct SearchIndex: Sendable {
     /// One ranked match.
     public struct Result: Sendable {
@@ -20,8 +17,8 @@ public struct SearchIndex: Sendable {
 
     /// The `limit` best matches for `query`, best first. An empty query matches nothing.
     ///
-    /// `usage` gives an item's bonus from how often and how recently it was opened; it only
-    /// orders matches of equal score. It is called once per matching item.
+    /// `usage` gives an item's bonus from how often and how recently it was opened; `precedes`
+    /// says where it counts. It is called once per matching item.
     public func results(
         for query: String, limit: Int, usage: (SearchItem) -> Int = { _ in 0 }
     ) -> [Result] {
@@ -61,7 +58,10 @@ public struct SearchIndex: Sendable {
         let index: Int
     }
 
-    /// Whether `a` ranks before `b`.
+    /// Whether `a` ranks before `b`: the higher `FuzzyMatch.Score` first (the kind of match,
+    /// then a subsequence's quality); at equal scores, the higher usage bonus, then the shorter
+    /// folded title, then the folded titles' byte order, then the id. Items that tie on all of
+    /// these, as duplicates do, keep the order they have in `items`.
     private func precedes(_ a: Ranked, _ b: Ranked) -> Bool {
         if a.score != b.score { return a.score > b.score }
         if a.usage != b.usage { return a.usage > b.usage }
@@ -71,6 +71,7 @@ public struct SearchIndex: Sendable {
         let y = second.foldedTitle.bytes
         if x.count != y.count { return x.count < y.count }
         if x != y { return x.lexicographicallyPrecedes(y) }
-        return first.id < second.id
+        if first.id != second.id { return first.id < second.id }
+        return a.index < b.index
     }
 }

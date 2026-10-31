@@ -36,7 +36,7 @@ private func titles(_ query: String, _ names: [String], limit: Int = 20) -> [Str
 }
 
 @Test func tiesOrderByShorterThenAlphabetical() {
-    let ranked = titles("ma", ["Maps Extra", "Mail", "Maps", "Mailbox"])
+    let ranked = titles("ma", ["Maps Extra", "Maps", "Mailbox", "Mail"])
     #expect(ranked == ["Mail", "Maps", "Mailbox", "Maps Extra"])
 }
 
@@ -85,4 +85,22 @@ private func titles(_ query: String, _ names: [String], limit: Int = 20) -> [Str
         #expect(count == 8)
         #expect(elapsed < .milliseconds(80))
     }
+}
+
+@Test func whitespaceQueryReturnsNothing() {
+    #expect(titles(" ", ["Visual Studio Code", "Safari"]).isEmpty)
+    #expect(titles("code ", ["Visual Studio Code"]) == ["Visual Studio Code"])
+}
+
+@Test func fullTiesKeepTheItemsOrder() {
+    let items = ["first", "second"].map { tag in
+        SearchItem(
+            id: "same", kind: .app, title: "Mail", subtitle: tag,
+            target: .openFile(URL(filePath: "/Applications/Mail.app")))
+    }
+    let subtitles = { (items: [SearchItem]) in
+        SearchIndex(items: items).results(for: "mail", limit: 5).map(\.item.subtitle)
+    }
+    #expect(subtitles(items) == ["first", "second"])
+    #expect(subtitles(items.reversed()) == ["second", "first"])
 }

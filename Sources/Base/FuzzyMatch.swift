@@ -1,3 +1,5 @@
+import Foundation
+
 /// How well a typed query matched one candidate, and where.
 ///
 /// The query's letters must appear in the candidate in order. A match falls into one of four
@@ -38,11 +40,15 @@ public struct FuzzyMatch: Sendable, Equatable {
         /// The folded query's bytes.
         private let bytes: [UInt8]
 
+        /// Whitespace around `text` is dropped, so a trailing space doesn't stop a match; spaces
+        /// inside it are matched like any other character.
         public init(_ text: String) {
-            bytes = Array(FoldedText.fold(text).utf8)
+            bytes = Array(
+                FoldedText.fold(text.trimmingCharacters(in: .whitespacesAndNewlines)).utf8)
         }
 
-        /// True when the query has nothing to match. An empty query matches no candidate.
+        /// True when the query has nothing to match, as one of only whitespace. An empty query
+        /// matches no candidate.
         public var isEmpty: Bool { bytes.isEmpty }
 
         /// The score of `candidate`, or nil when it doesn't hold the query's letters in order.

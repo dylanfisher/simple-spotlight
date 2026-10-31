@@ -4,8 +4,10 @@ import Foundation
 /// only compares bytes.
 ///
 /// Folding removes case, diacritics and width, so "Résumé" and "ｒｅｓｕｍｅ" both fold to
-/// "resume". A word starts at the beginning of the text, after a space or punctuation, and at a
-/// capital that follows a lowercase letter ("FaceTime" has words at "F" and "T").
+/// "resume". A word starts at the beginning of the text, after a space or punctuation, at a
+/// capital that follows a lowercase letter ("FaceTime"), at the last capital of a run of capitals
+/// followed by a lowercase letter (the "C" of "VPNClient"), and where letters and digits meet
+/// ("Time2Go", "Office365").
 public struct FoldedText: Sendable {
     /// The text as given, which the match's ranges index into.
     public let text: String
@@ -19,20 +21,17 @@ public struct FoldedText: Sendable {
 
     public init(_ text: String) {
         self.text = text
-        var wordStarts: [Int32] = []
+        // Each character's class and the offset of its first folded byte, for `wordStarts(_:)`.
+        var characters: [(CharacterClass, Int32)] = []
         if text.utf8.allSatisfy({ $0 < 0x80 }) {
             // Folding ASCII only lowercases, so offsets match and the original capitals show where
             // camel-case words start.
             var bytes: [UInt8] = []
             bytes.reserveCapacity(text.utf8.count)
-            var previous: CharacterClass?
+            characters.reserveCapacity(text.utf8.count)
             for byte in text.utf8 {
-                let current = CharacterClass(ascii: byte)
-                if Self.startsWord(current, after: previous) {
-                    wordStarts.append(Int32(bytes.count))
-                }
+                characters.append((CharacterClass(ascii: byte), Int32(bytes.count)))
                 bytes.append(Self.isCapital(byte) ? byte + 0x20 : byte)
-                previous = current
             }
             self.bytes = bytes
             origins = nil
@@ -42,22 +41,20 @@ public struct FoldedText: Sendable {
             var bytes: [UInt8] = []
             var origins: [Int32] = []
             var offset = 0
-            var previous: CharacterClass?
             for character in text {
-                let current = CharacterClass(character)
                 let folded = Self.fold(String(character)).utf8
-                if !folded.isEmpty && Self.startsWord(current, after: previous) {
-                    wordStarts.append(Int32(bytes.count))
+                // A character that folds to nothing can't be matched or start a word.
+                if !folded.isEmpty {
+                    characters.append((CharacterClass(character), Int32(bytes.count)))
                 }
                 bytes.append(contentsOf: folded)
                 origins.append(contentsOf: repeatElement(Int32(offset), count: folded.count))
                 offset += character.utf8.count
-                previous = current
             }
             self.bytes = bytes
             self.origins = origins
         }
-        self.wordStarts = wordStarts
+        wordStarts = Self.wordStarts(characters)
     }
 
     /// `text` with case, diacritics and width folded away: what a query is folded with before it
@@ -72,15 +69,16 @@ public struct FoldedText: Sendable {
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
     }
 
-    /// What a character contributes to finding word starts.
+    /// What a character contributes to finding word starts. Both initializers must agree on
+    /// ASCII, so a name finds the same words whichever path folds it.
     enum CharacterClass {
-        case separator, lowercase, uppercase, other
+        case separator, lowercase, uppercase, digit, otherLetter
 
         init(ascii byte: UInt8) {
             switch byte {
             case UInt8(ascii: "a")...UInt8(ascii: "z"): self = .lowercase
             case UInt8(ascii: "A")...UInt8(ascii: "Z"): self = .uppercase
-            case UInt8(ascii: "0")...UInt8(ascii: "9"): self = .other
+            case UInt8(ascii: "0")...UInt8(ascii: "9"): self = .digit
             default: self = .separator
             }
         }
@@ -90,21 +88,46 @@ public struct FoldedText: Sendable {
                 self = .lowercase
             } else if character.isUppercase {
                 self = .uppercase
-            } else if character.isLetter || character.isNumber {
-                self = .other
+            } else if character.isNumber {
+                self = .digit
+            } else if character.isLetter {
+                self = .otherLetter
             } else {
                 self = .separator
             }
         }
+
+        var isLetter: Bool {
+            switch self {
+            case .lowercase, .uppercase, .otherLetter: true
+            case .separator, .digit: false
+            }
+        }
     }
 
-    private static func startsWord(_ current: CharacterClass, after previous: CharacterClass?)
-        -> Bool
-    {
+    /// The folded offsets of the characters that start a word, from each character's class and
+    /// offset.
+    private static func wordStarts(_ characters: [(CharacterClass, Int32)]) -> [Int32] {
+        var starts: [Int32] = []
+        for (index, (current, offset)) in characters.enumerated() {
+            let previous = index > 0 ? characters[index - 1].0 : nil
+            let next = index + 1 < characters.count ? characters[index + 1].0 : nil
+            if startsWord(current, after: previous, before: next) { starts.append(offset) }
+        }
+        return starts
+    }
+
+    private static func startsWord(
+        _ current: CharacterClass, after previous: CharacterClass?, before next: CharacterClass?
+    ) -> Bool {
+        guard current != .separator else { return false }
+        guard let previous, previous != .separator else { return true }
         switch (previous, current) {
-        case (_, .separator): false
-        case (nil, _), (.separator, _), (.lowercase, .uppercase): true
-        default: false
+        case (.lowercase, .uppercase): return true
+        case (.uppercase, .uppercase): return next == .lowercase
+        case (.digit, _): return current.isLetter
+        case (_, .digit): return previous.isLetter
+        default: return false
         }
     }
 

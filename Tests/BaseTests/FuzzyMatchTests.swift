@@ -79,3 +79,35 @@ private func highlighted(_ query: String, _ text: String) -> [String]? {
     let query = FuzzyMatch.Query("sri")
     #expect(query.score(FoldedText("Safari"))! > query.score(FoldedText("Xsafari"))!)
 }
+
+@Test func trimsWhitespaceAroundTheQuery() {
+    #expect(FuzzyMatch.Query(" ").isEmpty)
+    #expect(FuzzyMatch.Query(" \t\n").isEmpty)
+    #expect(kind(" ", "Visual Studio Code") == nil)
+    #expect(kind("code ", "Visual Studio Code") == .wordStartPrefix)
+    #expect(kind("  saf", "Safari") == .exactPrefix)
+    #expect(kind("studio code", "Visual Studio Code") == .wordStartPrefix)
+}
+
+@Test func matchesAtDigitAndAcronymWordStarts() {
+    #expect(kind("go", "Time2Go") == .wordStartPrefix)
+    #expect(kind("365", "Office365") == .wordStartPrefix)
+    #expect(kind("vc", "VPNClient") == .initials)
+}
+
+@Test func rangesInNonASCIIText() {
+    #expect(highlighted("stras", "Straß") == ["Straß"])
+    #expect(highlighted("f", "ﬁle") == ["ﬁ"])
+    #expect(highlighted("file", "ﬁle") == ["ﬁle"])
+    #expect(highlighted("cafe", "Cafe\u{301}") == ["Cafe\u{301}"])
+    #expect(highlighted("e", "Cafe\u{301}") == ["e\u{301}"])
+    #expect(highlighted("co", "ｃｏｄｅ") == ["ｃｏ"])
+    #expect(highlighted("fam", "👨‍👩‍👧 Family") == ["Fam"])
+}
+
+@Test func matchesALongMultiByteQuery() {
+    let text = "日本語入力システム"
+    #expect(kind("日本語入力システム", text) == .exactPrefix)
+    #expect(highlighted("語入力シス", text) == ["語入力シス"])
+    #expect(kind("日本語入力システムX", text) == nil)
+}
