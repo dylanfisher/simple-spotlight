@@ -16,6 +16,11 @@ public struct ConfigError: Error, Equatable, Sendable, CustomStringConvertible {
         self.reason = reason
     }
 
+    /// An error with no key: one in the file's text, on `line`, or with the whole file.
+    public init(line: Int? = nil, reason: String) {
+        self.init(line: line, key: nil, reason: reason)
+    }
+
     /// The reason after the line it is on: `line 3: isn't valid JSON: …`.
     public var description: String {
         line.map { "line \($0): \(reason)" } ?? reason

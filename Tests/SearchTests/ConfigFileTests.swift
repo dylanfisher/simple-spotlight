@@ -187,3 +187,40 @@ func refusesABadKeyOnItsLine(entry: String, key: String, reason: String) {
         ConfigFile.parse(Data([0x7B, 0xFF, 0x7D]))
             == .failed([ConfigError(line: nil, key: nil, reason: "isn't UTF-8 text")]))
 }
+
+@Test func countsLinesEndedByALoneCarriageReturn() {
+    #expect(errors("{\r\"calculator\": 1,\r\n\"maxResults\": 0\r}").map(\.line) == [2, 3])
+}
+
+@Test func refusesAFileTooLargeToRead() {
+    let text = "{" + String(repeating: " ", count: ConfigFile.largestSize) + "}"
+    #expect(
+        errors(text) == [
+            ConfigError(
+                reason: "is too large: a config file has at most \(ConfigFile.largestSize) bytes")
+        ])
+}
+
+@Test func reportsTheFirstErrorsAndCountsTheRest() {
+    let keys = (1...30).map { "\"unknown\($0)\": 1" }
+    let found = errors("{\n" + keys.joined(separator: ",\n") + "\n}")
+    #expect(found.count == ConfigFile.mostErrors)
+    #expect(found.dropLast().map(\.line) == Array(2...ConfigFile.mostErrors))
+    #expect(
+        found.last
+            == ConfigError(reason: "and \(30 - ConfigFile.mostErrors + 1) more errors"))
+}
+
+@Suite(.serialized) struct ConfigFileTiming {
+    /// A file of many keys, as a pasted file might be, parses in time linear in its size. The
+    /// bound is loose: the scan once copied each object's keys per key, which took 5.5 s here.
+    @Test func parsesManyKeysQuickly() {
+        let keys = (1...50_000).map { "\"k\($0)\": 1" }
+        let text = "{\n" + keys.joined(separator: ",\n") + "\n}"
+        let clock = ContinuousClock()
+        let start = clock.now
+        let found = errors(text)
+        #expect(clock.now - start < .seconds(2))
+        #expect(found.count == ConfigFile.mostErrors)
+    }
+}
