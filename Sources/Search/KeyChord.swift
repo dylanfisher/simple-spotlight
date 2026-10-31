@@ -16,6 +16,10 @@ public struct KeyChord: Sendable, Equatable, CustomStringConvertible {
         public static let option = Modifiers(rawValue: 1 << 11)
         public static let control = Modifiers(rawValue: 1 << 12)
 
+        /// The four modifiers a chord can hold, which is also the Carbon mask that keeps any
+        /// other flag, such as Fn on an F-key shortcut, out of a comparison.
+        public static let all: Modifiers = [.command, .shift, .option, .control]
+
         /// Each modifier with its name in the config file and its symbol, in the order macOS
         /// menus draw them, which is also the order the config file writes them in.
         static let named: [(modifier: Modifiers, name: String, symbol: String)] = [

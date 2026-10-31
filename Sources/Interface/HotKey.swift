@@ -99,7 +99,7 @@ public final class HotKey: HotKeyRegistrar {
     public nonisolated static func systemShortcutUses(
         _ chord: KeyChord, in shortcuts: [SystemHotKey]
     ) -> Bool {
-        let mask = KeyChord.Modifiers([.command, .shift, .option, .control]).rawValue
+        let mask = KeyChord.Modifiers.all.rawValue
         return shortcuts.contains {
             $0.isEnabled && $0.code == chord.key.code
                 && $0.modifiers & mask == chord.modifiers.rawValue

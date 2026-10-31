@@ -81,7 +81,7 @@ private final class SettingsWindow: NSWindow {
     var quit: @MainActor () -> Void = {}
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let modifiers = event.modifierFlags.intersection(.chordKeys)
         guard modifiers == .command else { return super.performKeyEquivalent(with: event) }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "w":

@@ -510,7 +510,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// The Command chords. The app has no menu bar, so the editing chords the field needs are
     /// handled here; Command with any other modifier, or a key not listed, is left to the panel.
     private func keyEquivalent(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let modifiers = event.modifierFlags.intersection(.chordKeys)
         guard modifiers == .command,
             let chord = Self.chord(
                 characters: event.charactersIgnoringModifiers, keyCode: event.keyCode)

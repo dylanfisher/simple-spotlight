@@ -61,7 +61,7 @@ public final class ShortcutRecorder {
     /// them.
     func handle(_ event: NSEvent) -> Bool {
         guard isRecording else { return false }
-        let modifiers = Self.modifiers(event.modifierFlags)
+        let modifiers = event.modifierFlags.chordModifiers
         switch event.type {
         case .flagsChanged:
             held = modifiers
@@ -106,19 +106,25 @@ public final class ShortcutRecorder {
         }
     }
 
-    /// The chord modifiers among AppKit's flags.
-    nonisolated static func modifiers(_ flags: NSEvent.ModifierFlags) -> KeyChord.Modifiers {
-        let pairs: [(NSEvent.ModifierFlags, KeyChord.Modifiers)] = [
-            (.command, .command), (.option, .option), (.control, .control), (.shift, .shift),
-        ]
-        return pairs.reduce(into: []) { result, pair in
-            if flags.contains(pair.0) { result.insert(pair.1) }
-        }
-    }
-
     /// What the recorder shows: the chord, or while listening the modifiers held.
     func label(for chord: KeyChord) -> String {
         guard isRecording else { return chord.description }
         return held.isEmpty ? "Type a shortcut" : held.symbols
+    }
+}
+
+extension NSEvent.ModifierFlags {
+    /// The four modifiers a chord can hold; the rest of the flags, such as Caps Lock and Fn, are
+    /// not part of one.
+    static let chordKeys: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
+
+    /// The chord modifiers among the flags.
+    var chordModifiers: KeyChord.Modifiers {
+        let pairs: [(NSEvent.ModifierFlags, KeyChord.Modifiers)] = [
+            (.command, .command), (.option, .option), (.control, .control), (.shift, .shift),
+        ]
+        return pairs.reduce(into: []) { result, pair in
+            if contains(pair.0) { result.insert(pair.1) }
+        }
     }
 }

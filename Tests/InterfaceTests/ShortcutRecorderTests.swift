@@ -94,3 +94,11 @@ private final class Fixture {
     #expect(try !fixture.press(.k, .command))
     #expect(fixture.recorded.isEmpty)
 }
+
+@Test func theFourChordModifiersMapAndTheRestAreLeftOut() {
+    let flags: NSEvent.ModifierFlags = [.command, .shift, .option, .control, .capsLock, .function]
+
+    #expect(flags.chordModifiers == KeyChord.Modifiers.all)
+    #expect(flags.intersection(.chordKeys) == [.command, .shift, .option, .control])
+    #expect(NSEvent.ModifierFlags.capsLock.chordModifiers.isEmpty)
+}
