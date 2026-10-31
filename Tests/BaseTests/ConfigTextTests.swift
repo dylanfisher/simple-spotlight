@@ -61,3 +61,94 @@ private func spaces(_ count: Int) -> String { String(repeating: " ", count: coun
     }
     #expect(error?.line == 3)
 }
+
+// MARK: Editing
+
+private func scanned(_ text: String) throws -> ConfigText.Object {
+    try ConfigText.scan(Array(text.utf8))
+}
+
+/// `text` with the top-level key `name`'s value made `value`, or the key put in with `comment`
+/// above it when the text doesn't have it.
+private func setting(_ name: String, to value: String, comment: [String] = [], in text: String)
+    throws -> String
+{
+    let bytes = Array(text.utf8)
+    let root = try ConfigText.scan(bytes)
+    let edited =
+        root.member(name).map { ConfigText.replacing($0, with: value, in: bytes) }
+        ?? ConfigText.inserting(
+            "\"\(name)\": \(value)", comment: comment, into: root, in: bytes)
+    return String(decoding: edited, as: UTF8.self)
+}
+
+@Test func scanFindsEachTopLevelKeyAndItsValue() throws {
+    let text = """
+        {
+          // "fake": 1,
+          "a": [1, {"b": "]"}], /* "c": 2 */
+          "d\\u0065": "x",
+        }
+        """
+    let root = try scanned(text)
+    #expect(root.members.map(\.name) == ["a", "de"])
+    let bytes = Array(text.utf8)
+    let values = root.members.map {
+        String(decoding: bytes[$0.valueStart..<$0.valueEnd], as: UTF8.self)
+    }
+    #expect(values == [#"[1, {"b": "]"}]"#, #""x""#])
+    #expect(root.members.allSatisfy { $0.comma != nil })
+}
+
+@Test func scanRefusesTextThatIsntOneObject() {
+    #expect(throws: ConfigText.ScanError.self) { try scanned("[1]") }
+    #expect(throws: ConfigText.ScanError.self) { try scanned("{\"a\": 1} 2") }
+    #expect(throws: ConfigText.ScanError.self) { try scanned("{\"a\" 1}") }
+    #expect(throws: ConfigText.ScanError.self) { try scanned("{\"a\": 1") }
+}
+
+@Test func replacingAValueKeepsEveryOtherByte() throws {
+    let text = "{\n  // Rows.\n  \"max\": 8, // eight\n  \"b\": true\n}"
+    #expect(
+        try setting("max", to: "12", in: text)
+            == "{\n  // Rows.\n  \"max\": 12, // eight\n  \"b\": true\n}")
+    #expect(
+        try setting("b", to: "[\n    \"x\"\n  ]", in: text)
+            == "{\n  // Rows.\n  \"max\": 8, // eight\n  \"b\": [\n    \"x\"\n  ]\n}")
+}
+
+@Test func insertingPutsTheKeyAfterTheLastWithItsComment() throws {
+    let text = "{\n    \"a\": 1 // one\n}\n"
+    #expect(
+        try setting("b", to: "2", comment: ["Two.", "Takes a number."], in: text)
+            == "{\n    \"a\": 1, // one\n\n    // Two.\n    // Takes a number.\n    \"b\": 2\n}\n")
+}
+
+@Test func insertingMatchesATrailingComma() throws {
+    #expect(
+        try setting("b", to: "2", in: "{\n  \"a\": 1,\n}")
+            == "{\n  \"a\": 1,\n  \"b\": 2,\n}")
+}
+
+@Test func insertingKeepsCRLFLineEnds() throws {
+    #expect(
+        try setting("b", to: "2", comment: ["Two."], in: "{\r\n  \"a\": 1\r\n}\r\n")
+            == "{\r\n  \"a\": 1,\r\n\r\n  // Two.\r\n  \"b\": 2\r\n}\r\n")
+}
+
+@Test func insertingSkipsABlockCommentAfterTheLastKey() throws {
+    #expect(
+        try setting("b", to: "2", in: "{\n  \"a\": 1 /* x\n y */\n}")
+            == "{\n  \"a\": 1, /* x\n y */\n  \"b\": 2\n}")
+}
+
+@Test func insertingIntoAnObjectOnOneLineStaysOnIt() throws {
+    #expect(try setting("b", to: "2", comment: ["Two."], in: #"{"a": 1}"#) == #"{"a": 1, "b": 2}"#)
+    #expect(try setting("b", to: "2", in: #"{"a": 1,}"#) == #"{"a": 1, "b": 2,}"#)
+}
+
+@Test func insertingIntoAnEmptyObjectOpensItOntoLines() throws {
+    #expect(
+        try setting("b", to: "2", comment: ["Two."], in: "{}\n")
+            == "{\n  // Two.\n  \"b\": 2\n}\n")
+}
