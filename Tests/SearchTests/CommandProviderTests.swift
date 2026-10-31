@@ -5,18 +5,16 @@ import Testing
 
 private let commands = CommandProvider(appName: "Simple Spotlight")
 
-@Test func offersTheConfigAndQuitRowsAsCommands() {
-    #expect(commands.items.map(\.title) == ["Simple Spotlight Config", "Quit Simple Spotlight"])
+@Test func offersTheSettingsAndQuitRowsAsCommands() {
+    #expect(commands.items.map(\.title) == ["Simple Spotlight Settings", "Quit Simple Spotlight"])
     #expect(commands.items.allSatisfy { $0.kind == .command })
     #expect(
         commands.items.map(\.target)
-            == CommandProvider.Command.allCases.map {
-                .command($0.id)
-            })
+            == [CommandProvider.Command.openSettings, .quit].map { .command($0.id) })
     #expect(Set(commands.items.map(\.id)).count == commands.items.count)
 }
 
-@Test func ranksItsRowsForQuitAndConfig() {
+@Test func ranksItsRowsForQuitAndSettings() {
     let safari = SearchItem(
         id: "com.apple.Safari", kind: .app, title: "Safari", subtitle: nil,
         target: .openFile(URL(filePath: "/Applications/Safari.app")))
@@ -24,7 +22,8 @@ private let commands = CommandProvider(appName: "Simple Spotlight")
 
     #expect(index.results(for: "quit", limit: 8).map(\.item.title) == ["Quit Simple Spotlight"])
     #expect(
-        index.results(for: "config", limit: 8).map(\.item.title) == ["Simple Spotlight Config"])
+        index.results(for: "settings", limit: 8).map(\.item.title)
+            == ["Simple Spotlight Settings"])
 }
 
 @Test func readsTheCommandOfAnIdentifier() {

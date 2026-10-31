@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             opener: WorkspaceOpener(reportError: reportError), icons: IconCache(),
             makeConfigFile: { () throws(ConfigError) in try await store.makeDefaultFileIfMissing()
             },
+            updateConfig: { change throws(ConfigError) in try await store.update(change) },
             hotKey: HotKey(), systemHotKeys: { try HotKey.systemHotKeys() },
             conflictNotice: HotKeyConflictNotice(appName: appName),
             loginItem: LoginItem(service: MainAppLoginItem(), appName: appName),
@@ -62,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // state it sends is applied as it comes, the first registering the hotkey.
         Task {
             for await state in store.states {
-                coordinator.apply(settings: state.settings, errors: state.errors)
+                coordinator.apply(state)
             }
         }
         Task { await store.start() }

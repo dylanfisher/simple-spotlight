@@ -62,6 +62,7 @@ private final class Fixture {
     var errors: [String] = []
     var announcements: [String] = []
     var configResult: Result<URL, ConfigError> = .success(configURL)
+    var settingsOpened = 0
     private(set) var controller: SearchPanelController!
 
     init(items: [SearchItem] = [safari, fontBook, scanner, bluetooth, quitItem]) {
@@ -71,6 +72,7 @@ private final class Fixture {
             calculator: CalculatorProvider(locale: Locale(identifier: "en_US")),
             opener: opener, icons: IconCache(load: { _ in NSImage() }),
             configFile: { [unowned self] () throws(ConfigError) in try configResult.get() },
+            openSettings: { [unowned self] in settingsOpened += 1 },
             runCommand: { [unowned self] in commands.append($0) },
             recordOpen: { [unowned self] in recorded.append(Recorded(id: $0, query: $1)) },
             now: { [unowned self] in now },
@@ -607,12 +609,40 @@ extension Fixture {
     #expect(fixture.selection == 2)
 }
 
-@MainActor @Test func commandCommaOpensTheConfigFile() async throws {
+@MainActor @Test func commandCommaOpensSettings() throws {
     let fixture = Fixture()
 
     #expect(try fixture.command(",", keyCode: 43))
 
     #expect(!fixture.controller.isShown)
+    #expect(fixture.settingsOpened == 1)
+    #expect(fixture.opener.calls.isEmpty)
+}
+
+@MainActor @Test func theGearHidesThePanelAndOpensSettings() {
+    let fixture = Fixture()
+
+    fixture.controller.panel.showGear(true)
+    fixture.controller.panel.gear.performClick(nil)
+
+    #expect(!fixture.controller.isShown)
+    #expect(fixture.settingsOpened == 1)
+}
+
+@MainActor @Test func hidingTakesTheGearAway() {
+    let fixture = Fixture()
+    fixture.controller.panel.showGear(true)
+
+    fixture.controller.hide()
+
+    #expect(fixture.controller.panel.gear.isHidden)
+}
+
+@MainActor @Test func theConfigFileOpensFromTheController() async throws {
+    let fixture = Fixture()
+
+    fixture.controller.openConfigFile()
+
     await fixture.controller.configFileOpened?.value
     #expect(fixture.opener.calls == [.open(configURL)])
     #expect(fixture.errors.isEmpty)
@@ -877,8 +907,7 @@ extension Fixture {
     #expect(try fixture.command(characters: "й", keyCode: 12))
     #expect(fixture.quits == 1)
     #expect(try fixture.command(characters: "б", keyCode: 43))
-    await fixture.controller.configFileOpened?.value
-    #expect(fixture.opener.calls == [.copy("6"), .open(configURL)])
+    #expect(fixture.settingsOpened == 1)
 }
 
 @MainActor @Test func commandKeypadEnterRevealsAsCommandReturnDoes() throws {

@@ -2,13 +2,13 @@ import AppKit
 import Carbon
 import Search
 
-/// Tells the user the hotkey won't show the panel, how to free it, and that the config file can
-/// set another: an alert the first time, and a problem row in the panel for as long as it lasts.
+/// Tells the user the hotkey won't show the panel, how to free it, and that Settings can record
+/// another: an alert the first time, and a problem row in the panel for as long as it lasts.
 @MainActor
 public final class HotKeyConflictNotice {
     /// What the user can do from the notice.
     public enum Choice: Equatable, Sendable {
-        case openKeyboardShortcuts, openConfigFile, dismiss
+        case openKeyboardShortcuts, openSettings, dismiss
     }
 
     /// The notice's words and buttons, the first button the default.
@@ -61,7 +61,7 @@ public final class HotKeyConflictNotice {
     }
 
     /// The problem row for the conflict. Return opens Keyboard Shortcuts for a macOS shortcut,
-    /// and the config file for a chord another app holds.
+    /// and Settings, to record another, for a chord another app holds.
     public static func row(_ chord: KeyChord, conflict: HotKeyConflict) -> SearchItem {
         switch conflict {
         case .systemShortcut:
@@ -74,16 +74,16 @@ public final class HotKeyConflictNotice {
         case .refused:
             return ProblemItems.row(
                 .hotKey, title: "Another app uses \(chord)",
-                subtitle: "Set another \"hotkey\" in the config file. Return opens it.",
-                target: .command(CommandProvider.Command.openConfig.id))
+                subtitle: "Record another shortcut in Settings. Return opens them.",
+                target: .command(CommandProvider.Command.openSettings.id))
         }
     }
 
     static func content(_ chord: KeyChord, conflict: HotKeyConflict, appName: String) -> Content {
         let elsewhere =
-            "Or set another \"hotkey\" in the config file. Until then, open \(appName) again,"
-            + " as from Finder, to show the panel."
-        let config = Button(title: "Open Config File", choice: .openConfigFile)
+            "Or record another shortcut in \(appName) Settings. Until then, open \(appName)"
+            + " again, as from Finder, to show the panel."
+        let settings = Button(title: "Open Settings", choice: .openSettings)
         let ok = Button(title: "OK", choice: .dismiss)
         switch conflict {
         case .systemShortcut:
@@ -98,7 +98,7 @@ public final class HotKeyConflictNotice {
                     + " Settings → Keyboard → Keyboard Shortcuts…, \(place). \(elsewhere)",
                 buttons: [
                     Button(title: "Open Keyboard Shortcuts", choice: .openKeyboardShortcuts),
-                    config, ok,
+                    settings, ok,
                 ])
         case .refused(let status):
             let reason =
@@ -107,7 +107,7 @@ public final class HotKeyConflictNotice {
                 : "macOS refused \(chord) (status \(status))."
             return Content(
                 title: "\(appName) can't use \(chord)", message: "\(reason) \(elsewhere)",
-                buttons: [config, ok])
+                buttons: [settings, ok])
         }
     }
 

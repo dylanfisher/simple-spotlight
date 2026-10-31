@@ -5,8 +5,9 @@ import SwiftUI
 /// Shows and hides the search panel, searches the current index and the calculator on each
 /// keystroke, and handles the panel's keys: the arrows and Ctrl-N/P move the selection, Return
 /// opens, ⌘Return reveals in Finder, ⌘1…⌘9 open a row, ⌘C copies the field's selected text or
-/// else the selected row's path, URL or answer, Esc clears then hides, ⌘, opens the config file
-/// and ⌘Q quits, whatever the keyboard layout (docs/decisions/0008-search-panel-window.md).
+/// else the selected row's path, URL or answer, Esc clears then hides, ⌘, opens Settings, as the
+/// gear does that Option shows, and ⌘Q quits, whatever the keyboard layout
+/// (docs/decisions/0008-search-panel-window.md).
 ///
 /// With `showOnAllDisplays` it shows a panel on every display, all with the same query, rows and
 /// selection; one takes the keys (docs/decisions/0013-all-displays.md).
@@ -118,6 +119,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private let recordOpen: @MainActor (_ id: String, _ query: String) -> Void
     private let now: @MainActor () -> Date
     private let configFile: @MainActor () async throws(ConfigError) -> URL
+    private let openSettings: @MainActor () -> Void
     private let runCommand: @MainActor (String) -> Void
     private let quit: @MainActor () -> Void
     private let reportError: @MainActor (any Error) -> Void
@@ -126,6 +128,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// - Parameters:
     ///   - configFile: Gives the config file, creating the default one if it's missing, as
     ///     `ConfigStore.makeDefaultFileIfMissing` does.
+    ///   - openSettings: Opens the settings window, on ⌘, or a click of the gear.
     ///   - runCommand: Runs a `.command` row's identifier.
     ///   - recordOpen: Told the id of each app or System Settings pane opened, and the query
     ///     it was opened from, to count it in `usage`.
@@ -138,6 +141,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         index: SearchIndex, settings: Search.Settings, calculator: CalculatorProvider,
         opener: any ResultOpener, icons: IconCache,
         configFile: @escaping @MainActor () async throws(ConfigError) -> URL,
+        openSettings: @escaping @MainActor () -> Void,
         runCommand: @escaping @MainActor (String) -> Void,
         recordOpen: @escaping @MainActor (_ id: String, _ query: String) -> Void,
         now: @escaping @MainActor () -> Date,
@@ -151,6 +155,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         self.opener = opener
         self.icons = icons
         self.configFile = configFile
+        self.openSettings = openSettings
         self.runCommand = runCommand
         self.recordOpen = recordOpen
         self.now = now
@@ -176,6 +181,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         panel.delegate = self
         panel.keyEquivalent = { [weak self] in self?.keyEquivalent($0) ?? false }
         panel.willTakeKeys = { [weak self] in self?.takeKeys(in: $0) }
+        panel.openSettings = { [weak self] in self?.showSettings() }
         return Slot(panel: panel, rows: rows)
     }
 
@@ -317,6 +323,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         isShown = false
         let shown = shownPanels
         shownCount = 0
+        for panel in shown { panel.showGear(false) }
         if ordersPanel {
             for panel in shown { panel.orderOut(nil) }
         }
@@ -329,6 +336,12 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     public func toggle() {
         if isShown { hide() } else { show() }
+    }
+
+    /// Hides the panel and opens the settings window.
+    private func showSettings() {
+        hide()
+        openSettings()
     }
 
     /// Hides the panel and opens the config file, making the default one if there is none.
@@ -458,7 +471,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// The Command chords the panel takes, and what each does.
     enum Chord: Equatable {
-        case reveal, openConfig, quit, copy, cut, paste, selectAll
+        case reveal, openSettings, quit, copy, cut, paste, selectAll
         /// Opens the row at this index.
         case row(Int)
     }
@@ -471,7 +484,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// layout and the key that types it on a US one.
     private static let namedChords: [(character: String, key: KeyChord.Key, chord: Chord)] = [
         ("c", .c, .copy), ("x", .x, .cut), ("v", .v, .paste), ("a", .a, .selectAll),
-        ("q", .q, .quit), (",", .comma, .openConfig),
+        ("q", .q, .quit), (",", .comma, .openSettings),
     ]
     private static let digitKeys: [KeyChord.Key] = [
         .digit1, .digit2, .digit3, .digit4, .digit5, .digit6, .digit7, .digit8, .digit9,
@@ -505,8 +518,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         switch chord {
         case .reveal:
             revealSelected()
-        case .openConfig:
-            openConfigFile()
+        case .openSettings:
+            showSettings()
         case .quit:
             quit()
         case .copy:

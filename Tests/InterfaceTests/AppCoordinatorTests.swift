@@ -81,6 +81,15 @@ private final class BuildRecorder: @unchecked Sendable {
     }
 }
 
+/// The config file's settings, as the settings window's changes leave them.
+private actor StubConfig {
+    private(set) var settings = Search.Settings()
+
+    func update(_ change: SettingsModel.Change) {
+        change(&settings)
+    }
+}
+
 /// Records each watch of the index's folders, and keeps the last one's callback.
 @MainActor
 private final class StubWatch {
@@ -108,6 +117,7 @@ private final class Fixture {
     let hotKey = StubHotKey()
     let loginItem = StubLoginItem()
     let watch = StubWatch()
+    let config = StubConfig()
     let recorder: BuildRecorder
     let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     var systemHotKeys: [SystemHotKey] = []
@@ -140,6 +150,7 @@ private final class Fixture {
         _ = NSApplication.shared
         recorder = BuildRecorder(items: items, problems: problems)
         let recorder = recorder
+        let config = config
         stateFolder =
             state
             ?? FileManager.default.temporaryDirectory.appending(
@@ -150,6 +161,7 @@ private final class Fixture {
             calculator: CalculatorProvider(locale: Locale(identifier: "en_US")),
             opener: opener, icons: IconCache(load: { _ in NSImage() }),
             makeConfigFile: { () throws(ConfigError) in configURL },
+            updateConfig: { change throws(ConfigError) in await config.update(change) },
             hotKey: hotKey, systemHotKeys: { [unowned self] in systemHotKeys },
             conflictNotice: HotKeyConflictNotice(appName: "Simple Spotlight") {
                 [unowned self] content, _ in notices.append(content)
@@ -171,7 +183,8 @@ private final class Fixture {
 
     /// Applies `settings` and waits for the index build it starts, if any.
     func apply(_ settings: Search.Settings, errors: [ConfigError] = []) async {
-        coordinator.apply(settings: settings, errors: errors)
+        coordinator.apply(
+            ConfigStore.State(settings: settings, errors: errors, isFileBroken: !errors.isEmpty))
         await coordinator.indexBuild?.value
         await coordinator.noticeDecision?.value
     }
@@ -335,15 +348,84 @@ private final class Fixture {
     #expect(fixture.quits == 1)
 }
 
-@MainActor @Test func theConfigRowOpensTheConfigFile() async throws {
+@MainActor @Test func theSettingsRowOpensTheSettingsWindow() async throws {
     let fixture = Fixture()
     await fixture.apply(Search.Settings())
-    try fixture.type("config")
-    #expect(fixture.titles.first == "Simple Spotlight Config")
+    try fixture.type("settings")
+    #expect(fixture.titles.first == "Simple Spotlight Settings")
     try fixture.pressReturn()
-    await fixture.panel.configFileOpened?.value
 
-    #expect(fixture.opener.opened == [configURL])
+    #expect(!fixture.panel.isShown)
+    #expect(fixture.coordinator.settingsWindow.isShown)
+}
+
+@MainActor @Test func theSettingsWindowShowsEachState() async {
+    let fixture = Fixture()
+    var settings = Search.Settings()
+    settings.dimAfterDays = 9
+
+    await fixture.apply(settings, errors: [ConfigError(line: 2, reason: "bad")])
+
+    #expect(fixture.coordinator.settingsModel.settings.dimAfterDays == 9)
+    #expect(fixture.coordinator.settingsModel.isFileBroken)
+}
+
+@MainActor @Test func aChangeInTheSettingsWindowIsWrittenToTheConfigFile() async {
+    let fixture = Fixture()
+    await fixture.apply(Search.Settings())
+
+    fixture.coordinator.settingsModel.change { $0.showOnAllDisplays = true }
+    await fixture.coordinator.settingsModel.lastWrite?.value
+
+    #expect(await fixture.config.settings.showOnAllDisplays)
+}
+
+@MainActor @Test func recordingAShortcutGivesTheHotkeyUpUntilItStops() async {
+    let fixture = Fixture()
+    await fixture.apply(Search.Settings())
+    let recorder = fixture.coordinator.settingsModel.recorder
+
+    recorder.start()
+    #expect(fixture.hotKey.unregisters == 1)
+    #expect(fixture.hotKey.onPress == nil)
+
+    recorder.stop()
+    #expect(fixture.hotKey.registered == [KeyChord(.command, .space), KeyChord(.command, .space)])
+    #expect(fixture.hotKey.onPress != nil)
+}
+
+@MainActor @Test func aConflictShowsInTheOpenSettingsWindowInsteadOfAnAlert() async {
+    let fixture = Fixture()
+    await fixture.apply(Search.Settings())
+    fixture.coordinator.openSettings()
+    fixture.systemHotKeys = [
+        SystemHotKey(
+            modifiers: KeyChord.Modifiers([.control, .option]).rawValue, code: 40,
+            isEnabled: true)
+    ]
+    var settings = Search.Settings()
+    settings.hotkey = KeyChord([.control, .option], .k)
+
+    await fixture.apply(settings)
+
+    #expect(fixture.notices.isEmpty)
+    #expect(
+        fixture.coordinator.settingsModel.hotKeyConflict
+            == SettingsModel.Conflict(chord: settings.hotkey, conflict: .systemShortcut))
+}
+
+@MainActor @Test func aPressOfTheHotkeyClearsTheWindowsConflict() async throws {
+    let fixture = Fixture()
+    fixture.systemHotKeys = [
+        SystemHotKey(modifiers: KeyChord.Modifiers.command.rawValue, code: 49, isEnabled: true)
+    ]
+    await fixture.apply(Search.Settings())
+    #expect(fixture.coordinator.settingsModel.hotKeyConflict != nil)
+
+    let press = try #require(fixture.hotKey.onPress)
+    press()
+
+    #expect(fixture.coordinator.settingsModel.hotKeyConflict == nil)
 }
 
 @MainActor @Test func reopeningTheAppShowsThePanel() {
@@ -594,10 +676,12 @@ private actor Gates {
     })
     var settings = Search.Settings()
     settings.appFolders = ["/Old"]
-    fixture.coordinator.apply(settings: settings, errors: [])
+    fixture.coordinator.apply(
+        ConfigStore.State(settings: settings, errors: [], isFileBroken: false))
     let older = try #require(fixture.coordinator.indexBuild)
     settings.appFolders = ["/New"]
-    fixture.coordinator.apply(settings: settings, errors: [])
+    fixture.coordinator.apply(
+        ConfigStore.State(settings: settings, errors: [], isFileBroken: false))
     let newer = try #require(fixture.coordinator.indexBuild)
 
     await gates.open(2)

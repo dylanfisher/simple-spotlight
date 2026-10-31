@@ -12,7 +12,25 @@ final class SearchPanel: NSPanel {
     /// Told, with the panel, when a click is about to make it key, before it does: with a panel
     /// on each display, the one clicked takes the keys from another, which then resigns them.
     var willTakeKeys: @MainActor (SearchPanel) -> Void = { _ in }
+    /// Runs when the gear is clicked.
+    var openSettings: @MainActor () -> Void = {}
     let field = SearchField()
+    /// The way into Settings with the mouse, at the right end of the field. It shows only while
+    /// Option is held, so the field is the panel's only control the rest of the time.
+    let gear: NSButton = {
+        guard
+            let image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
+        else { preconditionFailure("there is no system symbol gearshape") }
+        let button = NSButton(image: image, target: nil, action: nil)
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = "Settings (⌘,)"
+        button.setAccessibilityLabel("Settings")
+        button.isHidden = true
+        return button
+    }()
 
     static let width: CGFloat = 680
     static let fieldHeight: CGFloat = 56
@@ -29,7 +47,7 @@ final class SearchPanel: NSPanel {
     /// The space either side of the field's contents: left of the magnifier, right of the text.
     private static let sideMargin: CGFloat = 18
     private static let magnifierSize: CGFloat = 24
-    /// The space between the magnifier and the text.
+    /// The space between the magnifier and the text, and between the text and the gear.
     private static let magnifierGap: CGFloat = 10
     private static let fieldLineHeight: CGFloat = 30
 
@@ -95,11 +113,24 @@ final class SearchPanel: NSPanel {
 
         separator.boxType = .separator
         self.rows = rows
+        gear.target = self
+        gear.action = #selector(gearClicked)
 
-        for view in [magnifier, field, separator, rows] { background.addSubview(view) }
+        for view in [magnifier, field, gear, separator, rows] { background.addSubview(view) }
         contentView = Self.makeContent(holding: background, bounds: bounds)
         initialFirstResponder = field
         layoutContent()
+    }
+
+    /// Shows or hides the gear, the field making room for it.
+    func showGear(_ shown: Bool) {
+        guard gear.isHidden == shown else { return }
+        gear.isHidden = !shown
+        layoutContent()
+    }
+
+    @objc private func gearClicked() {
+        openSettings()
     }
 
     /// Sets the height for `rows` rows, keeping the top edge where it is.
@@ -133,9 +164,14 @@ final class SearchPanel: NSPanel {
             x: Self.sideMargin, y: fieldTop + (Self.fieldHeight - symbol) / 2, width: symbol,
             height: symbol)
         let textLeft = Self.sideMargin + symbol + Self.magnifierGap
+        gear.frame = NSRect(
+            x: Self.width - Self.sideMargin - symbol,
+            y: fieldTop + (Self.fieldHeight - symbol) / 2, width: symbol, height: symbol)
+        let textRight =
+            gear.isHidden ? Self.width - Self.sideMargin : gear.frame.minX - Self.magnifierGap
         field.frame = NSRect(
             x: textLeft, y: fieldTop + (Self.fieldHeight - Self.fieldLineHeight) / 2,
-            width: Self.width - textLeft - Self.sideMargin, height: Self.fieldLineHeight)
+            width: textRight - textLeft, height: Self.fieldLineHeight)
         let rowsTop = fieldTop - Self.separatorHeight
         separator.isHidden = height <= Self.fieldHeight
         separator.frame = NSRect(
@@ -149,6 +185,7 @@ final class SearchPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .flagsChanged { showGear(event.modifierFlags.contains(.option)) }
         if !isKeyWindow, Self.clicks.contains(event.type) { willTakeKeys(self) }
         super.sendEvent(event)
     }

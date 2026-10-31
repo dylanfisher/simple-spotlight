@@ -82,3 +82,45 @@ import Testing
         #expect(!views.contains { $0 is NSGlassEffectView })
     }
 }
+
+@MainActor
+private func flagsChanged(_ flags: NSEvent.ModifierFlags, in panel: SearchPanel) throws -> NSEvent {
+    try #require(
+        NSEvent.keyEvent(
+            with: .flagsChanged, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: panel.windowNumber, context: nil, characters: "",
+            charactersIgnoringModifiers: "", isARepeat: false, keyCode: 0x3A))
+}
+
+@MainActor @Test func theGearShowsOnlyWhileOptionIsHeld() throws {
+    let panel = SearchPanel()
+    panel.install(rows: NSView())
+    #expect(panel.gear.isHidden)
+    let fullField = panel.field.frame.width
+
+    panel.sendEvent(try flagsChanged(.option, in: panel))
+    #expect(!panel.gear.isHidden)
+    #expect(panel.field.frame.maxX <= panel.gear.frame.minX)
+    #expect(panel.field.frame.width < fullField)
+
+    panel.sendEvent(try flagsChanged([.option, .shift], in: panel))
+    #expect(!panel.gear.isHidden)
+
+    panel.sendEvent(try flagsChanged([], in: panel))
+    #expect(panel.gear.isHidden)
+    #expect(panel.field.frame.width == fullField)
+}
+
+@MainActor @Test func theGearOpensSettingsAndSaysSo() {
+    let panel = SearchPanel()
+    panel.install(rows: NSView())
+    var opened = 0
+    panel.openSettings = { opened += 1 }
+
+    panel.showGear(true)
+    panel.gear.performClick(nil)
+
+    #expect(opened == 1)
+    #expect(panel.gear.accessibilityLabel() == "Settings")
+    #expect(panel.gear.toolTip == "Settings (⌘,)")
+}

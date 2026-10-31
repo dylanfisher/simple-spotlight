@@ -6,7 +6,9 @@ import os
 /// actor and swaps it into the panel, rebuilding it when the folders it reads change, follows
 /// `launchAtLogin`, and shows what is wrong as rows above the results. Each part runs only when
 /// its settings change (docs/decisions/0009-app-wiring.md). Loads usage at launch and records
-/// each open (docs/decisions/0010-usage-ranking.md).
+/// each open (docs/decisions/0010-usage-ranking.md). Holds the settings window, which shows each
+/// state and writes its changes to the config file
+/// (docs/decisions/0015-settings-window.md).
 @MainActor
 public final class AppCoordinator {
     /// Builds the index the settings ask for, off the main actor; throws when cancelled.
@@ -20,6 +22,9 @@ public final class AppCoordinator {
         -> @MainActor () -> Void
 
     public private(set) var panel: SearchPanelController!
+    /// What the settings window shows.
+    public private(set) var settingsModel: SettingsModel!
+    public private(set) var settingsWindow: SettingsWindowController!
     /// The settings last applied; nil before the first.
     public private(set) var settings: Search.Settings?
     /// The build started last, for tests to wait on.
@@ -52,19 +57,24 @@ public final class AppCoordinator {
     private var hotKeyProblem: SearchItem?
     /// The times the panel has shown, for the timing `show` logs.
     private var shows = 0
+    /// Whether the settings window is recording a shortcut, so the hotkey is given up.
+    private var isRecordingShortcut = false
 
     /// - Parameters:
     ///   - configFile: Where the config file is, for its error row.
     ///   - makeConfigFile: Gives the config file, creating the default one if it's missing.
+    ///   - updateConfig: Writes a change from the settings window into the config file.
     ///   - systemHotKeys: The shortcuts macOS handles itself, checked for the hotkey's chord.
     ///   - appState: Remembers the chords whose conflict alert the user has seen.
     ///   - usage: Holds what the user has opened; loaded now, off the main actor.
     ///   - now: The time an open is recorded at and usage decays to.
-    ///   - ordersPanel: Whether showing puts the panel on screen; tests pass false.
+    ///   - ordersPanel: Whether showing puts the panel and the settings window on screen; tests
+    ///     pass false.
     public init(
         appName: String, configFile: URL, calculator: CalculatorProvider,
         opener: any ResultOpener, icons: IconCache,
         makeConfigFile: @escaping @MainActor () async throws(ConfigError) -> URL,
+        updateConfig: @escaping SettingsModel.Update,
         hotKey: any HotKeyRegistrar,
         systemHotKeys: @escaping @MainActor () throws -> [SystemHotKey],
         conflictNotice: HotKeyConflictNotice, loginItem: LoginItem, appState: AppStateStore,
@@ -91,18 +101,31 @@ public final class AppCoordinator {
         panel = SearchPanelController(
             index: SearchIndex(items: commands.items), settings: Search.Settings(),
             calculator: calculator, opener: opener, icons: icons, configFile: makeConfigFile,
+            openSettings: { [weak self] in self?.openSettings() },
             runCommand: { [weak self] in self?.run(command: $0) },
             recordOpen: { [weak self] in self?.recordOpen($0, query: $1) }, now: now, quit: quit,
             reportError: reportError, ordersPanel: ordersPanel)
+        settingsModel = SettingsModel(
+            configFile: configFile, update: updateConfig,
+            openConfigFile: { [weak self] in self?.panel.openConfigFile() },
+            openKeyboardShortcuts: { opener.open(HotKeyConflictNotice.keyboardShortcutsURL) },
+            recordingChanged: { [weak self] in self?.recordingChanged($0) })
+        settingsWindow = SettingsWindowController(
+            model: settingsModel, title: "\(appName) Settings", quit: quit,
+            ordersWindow: ordersPanel)
         updateUsage { usage in try await usage.load(at: now()) }
     }
 
-    /// Applies the config file's settings and errors. The hotkey is registered first, so it is
-    /// ready before the index is built.
-    public func apply(settings new: Search.Settings, errors: [ConfigError]) {
+    /// Applies what the config store read: its settings and errors. The hotkey is registered
+    /// first, so it is ready before the index is built.
+    public func apply(_ state: ConfigStore.State) {
+        let new = state.settings
+        let errors = state.errors
         let old = settings
         settings = new
-        if old?.hotkey != new.hotkey {
+        settingsModel.receive(state)
+        // Recording gives the hotkey up; its end registers the chord the settings have then.
+        if old?.hotkey != new.hotkey, !isRecordingShortcut {
             register(new.hotkey)
         }
         if old?.indexKeys != new.indexKeys {
@@ -131,6 +154,12 @@ public final class AppCoordinator {
         if old == nil {
             Task { [weak self] in self?.panel.prepare() }
         }
+    }
+
+    /// Hides the panel and brings the settings window forward.
+    public func openSettings() {
+        panel.hide()
+        settingsWindow.show()
     }
 
     /// Shows the panel, as a second launch of the app asks: the way in when the hotkey doesn't
@@ -163,6 +192,7 @@ public final class AppCoordinator {
         // The press reached the app, so no macOS shortcut holds the chord any more.
         if hotKeyProblem != nil {
             hotKeyProblem = nil
+            settingsModel.hotKeyConflict = nil
             showProblems()
         }
         if panel.isShown { panel.hide() } else { show() }
@@ -196,8 +226,9 @@ public final class AppCoordinator {
 
     /// Registers `chord`, telling the user when it won't work: when a macOS shortcut that is
     /// turned on uses it, as Spotlight's uses ⌘Space, or when registering it fails. The chord is
-    /// registered even then, so it works once the user frees it. The conflict shows as a row,
-    /// and the first time for the chord, as an alert too.
+    /// registered even then, so it works once the user frees it. The conflict shows as a row and
+    /// in the settings window, and the first time for the chord, as an alert too, unless the
+    /// settings window is open to say it.
     private func register(_ chord: KeyChord) {
         var conflict: HotKeyConflict?
         do {
@@ -214,10 +245,14 @@ public final class AppCoordinator {
             conflict = error
         }
         hotKeyProblem = conflict.map { HotKeyConflictNotice.row(chord, conflict: $0) }
+        settingsModel.hotKeyConflict = conflict.map {
+            SettingsModel.Conflict(chord: chord, conflict: $0)
+        }
         guard let conflict else { return }
         log.error(
             "hotkey \(chord.text, privacy: .private): \(String(describing: conflict), privacy: .public)"
         )
+        guard !settingsWindow.isShown else { return }
         noticeDecision = Task { [weak self, appState, log, conflictNotice] in
             do {
                 if try await appState.acknowledgedHotKeys().contains(chord.text) { return }
@@ -236,7 +271,7 @@ public final class AppCoordinator {
     private func handle(_ choice: HotKeyConflictNotice.Choice) {
         switch choice {
         case .openKeyboardShortcuts: opener.open(HotKeyConflictNotice.keyboardShortcutsURL)
-        case .openConfigFile: panel.openConfigFile()
+        case .openSettings: openSettings()
         case .dismiss: break
         }
     }
@@ -310,8 +345,21 @@ public final class AppCoordinator {
         }
     }
 
+    /// Gives the hotkey up while the settings window records a shortcut, since a registered
+    /// chord never reaches the window, and registers the settings' chord again after.
+    private func recordingChanged(_ isRecording: Bool) {
+        isRecordingShortcut = isRecording
+        if isRecording {
+            hotKey.unregister()
+        } else if let settings {
+            register(settings.hotkey)
+            showProblems()
+        }
+    }
+
     private func run(command id: String) {
         switch CommandProvider.Command(id: id) {
+        case .openSettings: openSettings()
         case .openConfig: panel.openConfigFile()
         case .quit: quit()
         case nil: preconditionFailure("no command \(id)")

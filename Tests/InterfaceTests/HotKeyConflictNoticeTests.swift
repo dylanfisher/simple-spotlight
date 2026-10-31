@@ -13,8 +13,8 @@ import Testing
         content.message.contains(
             "System Settings → Keyboard → Keyboard Shortcuts…, choose Spotlight, and turn off"
                 + " \"Show Spotlight search\""))
-    #expect(content.message.contains("config file"))
-    #expect(content.buttons.map(\.choice) == [.openKeyboardShortcuts, .openConfigFile, .dismiss])
+    #expect(content.message.contains("Or record another shortcut in Simple Spotlight Settings."))
+    #expect(content.buttons.map(\.choice) == [.openKeyboardShortcuts, .openSettings, .dismiss])
 }
 
 @MainActor @Test func namesTheChordWhenItIsntSpotlights() {
@@ -30,7 +30,8 @@ import Testing
         appName: "Simple Spotlight")
 
     #expect(content.message.contains("Another app uses ⌃K"))
-    #expect(content.buttons.map(\.choice) == [.openConfigFile, .dismiss])
+    #expect(content.buttons.map(\.title) == ["Open Settings", "OK"])
+    #expect(content.buttons.map(\.choice) == [.openSettings, .dismiss])
 }
 
 @MainActor @Test func aSystemShortcutRowOpensKeyboardShortcuts() {
@@ -48,11 +49,11 @@ import Testing
     #expect(row.title == "⌃F2 is also a macOS shortcut")
 }
 
-@MainActor @Test func aRefusedChordsRowOpensTheConfigFile() {
+@MainActor @Test func aRefusedChordsRowOpensSettings() {
     let row = HotKeyConflictNotice.row(KeyChord(.control, .k), conflict: .refused(-9878))
 
     #expect(row.title == "Another app uses ⌃K")
-    #expect(row.target == .command(CommandProvider.Command.openConfig.id))
+    #expect(row.target == .command(CommandProvider.Command.openSettings.id))
 }
 
 @MainActor @Test func opensTheKeyboardShortcutsSection() {
