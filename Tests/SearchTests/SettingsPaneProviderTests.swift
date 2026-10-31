@@ -3,35 +3,21 @@ import Testing
 
 @testable import Search
 
-/// Writes `<file>.appex` in `folder`, a Settings extension unless `extensionPoint` or `allowsURL`
-/// say otherwise.
-@discardableResult
-private func makePane(
-    _ file: String, in folder: URL, id: String, displayName: String? = nil,
-    extensionPoint: String = SettingsPaneProvider.extensionPoint, allowsURL: Bool? = true,
-    extra: [String: Any] = [:], localized: [String: [String: String]] = [:]
-) throws -> URL {
-    var settings: [String: Any] = [:]
-    settings["allowsXAppleSystemPreferencesURLScheme"] = allowsURL
-    var info = extra
-    info["CFBundleIdentifier"] = id
-    info["CFBundleName"] = file
-    info["EXAppExtensionAttributes"] = [
-        "EXExtensionPointIdentifier": extensionPoint, "SettingsExtensionAttributes": settings,
-    ]
-    info["CFBundleDisplayName"] = displayName
-    let url = folder.appending(path: "\(file).appex", directoryHint: .isDirectory)
-    try makeBundle(at: url, info: info, localized: localized, as: .loctable)
-    return url
+private func scan(
+    _ extensions: [URL], preferencePanes: [URL] = [], languages: [String] = ["en"]
+) throws -> (items: [SearchItem], problems: [IndexProblem]) {
+    try SettingsPaneProvider(
+        extensionFolders: extensions, preferencePaneFolders: preferencePanes,
+        languages: languages
+    ).items()
 }
 
 private func panes(
     in extensions: URL, preferencePanes: [URL] = [], languages: [String] = ["en"]
 ) throws -> [SearchItem] {
-    try SettingsPaneProvider(
-        extensionFolders: [extensions], preferencePaneFolders: preferencePanes,
-        languages: languages
-    ).items()
+    let found = try scan([extensions], preferencePanes: preferencePanes, languages: languages)
+    #expect(found.problems.isEmpty)
+    return found.items
 }
 
 @Test func indexesASettingsExtension() throws {
@@ -41,6 +27,7 @@ private func panes(
     #expect(item.id == "test.keyboard")
     #expect(item.kind == .settingsPane)
     #expect(item.title == "Keyboard")
+    #expect(item.alternateNames.isEmpty)
     #expect(item.subtitle == SettingsPaneProvider.subtitle)
     #expect(item.target == .openURL(URL(string: "x-apple.systempreferences:test.keyboard")!))
 }
@@ -54,6 +41,15 @@ private func panes(
     #expect(try panes(in: root.url).map(\.id) == ["test.shown"])
 }
 
+@Test func neverReadsTheLocTableOfAnotherExtension() throws {
+    let root = try TempFolder()
+    let widget = try makePane(
+        "Widget", in: root.url, id: "test.widget", extensionPoint: "com.apple.widgetkit")
+    try Data("not a plist".utf8).write(
+        to: widget.appending(path: "Contents/Resources/InfoPlist.loctable"))
+    #expect(try panes(in: root.url).isEmpty)
+}
+
 @Test func paneNamesComeFromTheLocTable() throws {
     let root = try TempFolder()
     try makePane(
@@ -64,7 +60,9 @@ private func panes(
             "de": ["CFBundleDisplayName": "Menüleiste"],
         ])
     #expect(try panes(in: root.url).map(\.title) == ["Menu Bar"])
-    #expect(try panes(in: root.url, languages: ["de-DE"]).map(\.title) == ["Menüleiste"])
+    let german = try #require(try panes(in: root.url, languages: ["de-DE"]).first)
+    #expect(german.title == "Menüleiste")
+    #expect(german.alternateNames == ["Menu Bar"])
 }
 
 @Test func paneNamesFallBackToInfoPlistForTheDevelopmentRegion() throws {
@@ -91,6 +89,13 @@ private func panes(
     #expect(try panes(in: root.url).map(\.title) == [name])
 }
 
+@Test func skipsHiddenPanes() throws {
+    let root = try TempFolder()
+    let id = try #require(SettingsPaneProvider.hidden.first)
+    try makePane("Hidden", in: root.url, id: id, displayName: "Hidden")
+    #expect(try panes(in: root.url).isEmpty)
+}
+
 @Test func indexesPreferencePanesByPath() throws {
     let extensions = try TempFolder()
     let preferencePanes = try TempFolder()
@@ -105,11 +110,47 @@ private func panes(
     #expect(item.target == .openFile(url))
 }
 
-@Test func aMissingExtensionFolderThrows() throws {
-    let root = try TempFolder()
-    #expect(throws: (any Error).self) {
-        try panes(in: root.url.appending(path: "Missing"))
+@Test func aDuplicatePreferencePaneKeepsTheFirstFolders() throws {
+    let extensions = try TempFolder()
+    let first = try TempFolder()
+    let second = try TempFolder()
+    for (folder, name) in [(first, "New"), (second, "Old")] {
+        try makeBundle(
+            at: folder.url.appending(path: "\(name).prefPane", directoryHint: .isDirectory),
+            info: ["CFBundleIdentifier": "test.same", "CFBundleName": name])
     }
+    let found = try panes(in: extensions.url, preferencePanes: [first.url, second.url])
+    #expect(found.map(\.title) == ["New"])
+}
+
+@Test func aMissingExtensionFolderIsAProblem() throws {
+    let root = try TempFolder()
+    let missing = root.url.appending(path: "Missing")
+    try makePane("Sound", in: root.url, id: "test.sound", displayName: "Sound")
+    let found = try scan([missing, root.url])
+    #expect(found.items.map(\.id) == ["test.sound"])
+    #expect(found.problems.map(\.path) == [missing.path])
+}
+
+@Test func aGarbagePaneIsAProblem() throws {
+    let root = try TempFolder()
+    let broken = try makePane("Broken", in: root.url, id: "test.broken", displayName: "Broken")
+    try makePane("Sound", in: root.url, id: "test.sound", displayName: "Sound")
+    let plist = broken.appending(path: "Contents/Info.plist")
+    try Data("not a plist".utf8).write(to: plist)
+    let found = try scan([root.url])
+    #expect(found.items.map(\.id) == ["test.sound"])
+    #expect(found.problems.map(\.path) == [plist.path])
+}
+
+@Test func stopsPaneScanWhenCancelled() async throws {
+    let root = try TempFolder()
+    try makePane("Sound", in: root.url, id: "test.sound", displayName: "Sound")
+    let result = await Task {
+        withUnsafeCurrentTask { $0?.cancel() }
+        return Result { try scan([root.url]) }
+    }.value
+    #expect(throws: CancellationError.self) { try result.get() }
 }
 
 /// Words with a lowercase letter before a capital that are real names, not bundle names run
@@ -119,9 +160,10 @@ private let camelCaseNames: Set<Substring> = ["AirDrop", "AppleCare", "FollowUps
 /// Every pane on this Mac gets the name System Settings shows, not a bundle's internal name such
 /// as "PowerPreferences" or "HeadphoneSettingsExtension".
 @Test func everyPaneOnThisMacHasAReadableName() throws {
-    let items = try SettingsPaneProvider(languages: ["en-US"]).items()
-    #expect(items.count > 40)
-    for item in items {
+    let found = try SettingsPaneProvider(languages: ["en-US"]).items()
+    #expect(found.problems.isEmpty)
+    #expect(found.items.count > 40)
+    for item in found.items {
         let runTogether = item.title.split(separator: " ").contains { word in
             !camelCaseNames.contains(word)
                 && zip(word, word.dropFirst()).contains { $0.isLowercase && $1.isUppercase }

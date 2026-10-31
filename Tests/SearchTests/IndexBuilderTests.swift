@@ -7,31 +7,29 @@ import Testing
     let apps = try TempFolder()
     let extensions = try TempFolder()
     try makeApp("Mail", in: apps.url, id: "test.mail")
-    try makeBundle(
-        at: extensions.url.appending(path: "Sound.appex"),
-        info: [
-            "CFBundleIdentifier": "test.sound", "CFBundleDisplayName": "Sound",
-            "EXAppExtensionAttributes": [
-                "EXExtensionPointIdentifier": SettingsPaneProvider.extensionPoint,
-                "SettingsExtensionAttributes": ["allowsXAppleSystemPreferencesURLScheme": true],
-            ],
-        ])
+    try makePane("Sound", in: extensions.url, id: "test.sound", displayName: "Sound")
     let builder = IndexBuilder(
-        apps: AppProvider(folders: [apps.url], languages: ["en"]),
+        apps: AppProvider(folders: [apps.url], languages: ["en"], extraApps: []),
         settingsPanes: SettingsPaneProvider(
             extensionFolders: [extensions.url], preferencePaneFolders: [], languages: ["en"]))
     let build = try await builder.build()
     #expect(build.items.map(\.id) == ["test.mail", "test.sound"])
+    #expect(build.problems.isEmpty)
     #expect(build.duration > .zero)
 }
 
-@Test func aProviderErrorFailsTheBuild() async throws {
+@Test func collectsBothProvidersProblems() async throws {
     let root = try TempFolder()
+    let missingApps = root.url.appending(path: "MissingApps")
+    let missingPanes = root.url.appending(path: "MissingPanes")
+    try makeApp("Mail", in: root.url, id: "test.mail")
     let builder = IndexBuilder(
-        apps: AppProvider(folders: [root.url.appending(path: "Missing")], languages: ["en"]),
+        apps: AppProvider(folders: [missingApps, root.url], languages: ["en"], extraApps: []),
         settingsPanes: SettingsPaneProvider(
-            extensionFolders: [root.url], preferencePaneFolders: [], languages: ["en"]))
-    await #expect(throws: (any Error).self) { try await builder.build() }
+            extensionFolders: [missingPanes], preferencePaneFolders: [], languages: ["en"]))
+    let build = try await builder.build()
+    #expect(build.items.map(\.id) == ["test.mail"])
+    #expect(build.problems.map(\.path) == [missingApps.path, missingPanes.path])
 }
 
 @Suite(.serialized) struct IndexBuilderTiming {
@@ -51,10 +49,11 @@ import Testing
         let builder = IndexBuilder(
             apps: AppProvider(folders: Self.appFolders), settingsPanes: SettingsPaneProvider())
         let build = try await builder.build()
+        #expect(build.problems.isEmpty)
         let ids = Set(build.items.map(\.id))
         for id in [
             "com.apple.Safari", "com.apple.systempreferences", "com.apple.BluetoothSettings",
-            "com.apple.Keyboard-Settings.extension",
+            "com.apple.Keyboard-Settings.extension", "com.apple.finder",
         ] {
             #expect(ids.contains(id), "\(id)")
         }

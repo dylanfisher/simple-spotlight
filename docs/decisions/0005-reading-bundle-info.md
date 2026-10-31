@@ -26,10 +26,25 @@ file name.
   plain key is the iOS "Playground"), as `Bundle` reads it.
 - **Listings skip dot files only.** `/Applications/Safari.app` is a symbolic link with the hidden
   flag set, so `.skipsHiddenFiles` drops Safari. Links are followed.
-- **A bundle with no `Info.plist` is indexed by file name and path**; one whose `Info.plist` or
-  strings file doesn't parse fails the build with the file's path, as does a folder that can't
-  be listed. A missing `.prefPane` folder has no panes; the app folders' existence is P4's to
-  check, per the plan's config rules.
+- **Only `Info.plist` is read until the bundle is known to be wanted.** An appex's strings are
+  read only once its `Info.plist` says it is a Settings pane, so the 30-odd other extensions in
+  the folder cost one small file each.
+- **When no localization matches a preferred language, the development region's is used**, as
+  `Bundle` does, not the arbitrary candidate `preferredLocalizations` returns then.
+- **Soft hyphens (U+00AD) are removed from names.** German names carry them
+  ("System­einstellungen"), and `FoldedText` drops all format characters when matching.
+- **A localized app is also found by its file name.** The file name, when it differs from the
+  title, is an alternate match name, so a German user finds "Rechner" by typing "calc".
+- **Finder is always included** when `/System/Library/CoreServices/Finder.app` exists
+  (`AppProvider.finder`). It sits in none of the configured folders, and the plan leaves
+  `/System/Library/CoreServices` itself out because most apps there are agents.
+- **One bad folder or bundle leaves out only itself.** A bundle with no `Info.plist` is indexed
+  by file name and path. A bundle whose `Info.plist` or strings don't parse, a folder or
+  subfolder that can't be listed, and a configured folder that is missing are each skipped and
+  returned as an `IndexProblem` (path and a plain reason) beside the items, which
+  `IndexBuilder.Build` carries for the panel to show. A missing `~/Applications` and missing
+  `.prefPane` folders are skipped silently, as most Macs don't have them. The providers throw
+  only `CancellationError`, so a stale rebuild can be cancelled.
 
 ## Alternatives considered
 
@@ -38,11 +53,12 @@ file name.
   also misses names that live only in `Info.plist` (0004).
 - **`FileManager.displayName(atPath:)` for apps** — rejected: it follows the Finder setting for
   showing extensions ("Safari.app"), and goes through Launch Services for each app.
-- **Skipping a bundle with a broken `Info.plist`** — rejected per "fail loudly"; none exists on
-  the build machine. If one turns up in practice, the error names the file.
+- **Failing the whole build on the first bad bundle or folder** — rejected: one broken
+  third-party app would empty the launcher. Reporting each problem beside the items keeps the
+  failure visible without that.
 
 ## Consequences
 
-The build reads only plain files, so it measures about 30 ms for 117 apps and 52 panes with a
+The build reads only plain files, so it measures about 31 ms for 118 apps and 50 panes with a
 warm disk cache (release build, median of 20). A bundle format `BundleInfo` doesn't read, such as
 an iOS app's `Wrapper/`, gets its file name as its title.

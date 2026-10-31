@@ -65,7 +65,33 @@ private func titles(_ query: String, _ names: [String], limit: Int = 20) -> [Str
 
 @Test func resultsCarryTheMatchedRanges() {
     let result = SearchIndex(items: [app("Safari")]).results(for: "saf", limit: 1)[0]
-    #expect(result.match.ranges.map { String(result.item.title[$0]) } == ["Saf"])
+    #expect(result.ranges.map { String(result.item.title[$0]) } == ["Saf"])
+}
+
+private let calculator = SearchItem(
+    id: "com.apple.calculator", kind: .app, title: "Rechner", subtitle: nil,
+    target: .openFile(URL(filePath: "/System/Applications/Calculator.app")),
+    alternateNames: ["Calculator"])
+
+@Test func matchesAnAlternateNameWithoutRanges() throws {
+    let index = SearchIndex(items: [calculator, app("Calendar")])
+    let results = index.results(for: "calc", limit: 5)
+    let result = try #require(results.first)
+    #expect(results.map(\.item.title) == ["Rechner"])
+    #expect(result.score.kind == .exactPrefix)
+    #expect(result.ranges.isEmpty)
+}
+
+@Test func aTitleMatchKeepsItsRanges() throws {
+    let result = try #require(SearchIndex(items: [calculator]).results(for: "rech", limit: 5).first)
+    #expect(result.ranges.map { String(result.item.title[$0]) } == ["Rech"])
+}
+
+@Test func anAlternateMatchRanksByItsKind() {
+    // The alternate's exact prefix beats the other item's initials.
+    let index = SearchIndex(items: [app("Cool Alarm Light"), calculator])
+    #expect(
+        index.results(for: "cal", limit: 5).map(\.item.title) == ["Rechner", "Cool Alarm Light"])
 }
 
 @Suite(.serialized) struct SearchIndexTiming {

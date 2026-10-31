@@ -6,7 +6,10 @@ public struct SearchIndex: Sendable {
     /// One ranked match.
     public struct Result: Sendable {
         public let item: SearchItem
-        public let match: FuzzyMatch
+        /// The better of the title's and the alternate names' scores.
+        public let score: FuzzyMatch.Score
+        /// The matched characters of the title; empty when an alternate name matched better.
+        public let ranges: [Range<String.Index>]
     }
 
     public let items: [SearchItem]
@@ -30,8 +33,8 @@ public struct SearchIndex: Sendable {
         var top: [Ranked] = []
         top.reserveCapacity(limit + 1)
         for (index, item) in items.enumerated() {
-            guard let score = query.score(item.foldedTitle) else { continue }
-            let ranked = Ranked(score: score, usage: usage(item), index: index)
+            guard let (score, byTitle) = Self.score(query, item) else { continue }
+            let ranked = Ranked(score: score, byTitle: byTitle, usage: usage(item), index: index)
             if top.count == limit, let last = top.last, !precedes(ranked, last) { continue }
             var low = 0
             var high = top.count
@@ -44,18 +47,34 @@ public struct SearchIndex: Sendable {
         }
         return top.map { ranked in
             let item = items[ranked.index]
+            guard ranked.byTitle else { return Result(item: item, score: ranked.score, ranges: []) }
             guard let match = query.match(item.foldedTitle) else {
                 preconditionFailure("\(item.title) scored but didn't match")
             }
-            return Result(item: item, match: match)
+            return Result(item: item, score: ranked.score, ranges: match.ranges)
         }
     }
 
     /// A scored item, before its ranges are worked out.
     private struct Ranked {
         let score: FuzzyMatch.Score
+        /// Whether the title gave the score, rather than an alternate name.
+        let byTitle: Bool
         let usage: Int
         let index: Int
+    }
+
+    /// The best score of `item`'s title and alternate names, and whether the title gave it. The
+    /// title wins a tie, so its ranges can be shown.
+    private static func score(_ query: FuzzyMatch.Query, _ item: SearchItem) -> (
+        FuzzyMatch.Score, Bool
+    )? {
+        var best = query.score(item.foldedTitle).map { ($0, true) }
+        for alternate in item.foldedAlternates {
+            guard let score = query.score(alternate) else { continue }
+            if best.map({ score > $0.0 }) ?? true { best = (score, false) }
+        }
+        return best
     }
 
     /// Whether `a` ranks before `b`: the higher `FuzzyMatch.Score` first (the kind of match,

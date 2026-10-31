@@ -1,4 +1,4 @@
-# 0004. System Settings pane names: the extension's loctable, then a two-entry table
+# 0004. System Settings pane names: the extension's loctable, then a small table
 
 - **Date:** 2026-10-31
 - **Status:** accepted
@@ -36,13 +36,24 @@ What we found, looking at each appex's `Resources` and at System Settings' own:
 
 ## Decision
 
-A pane's name is `SettingsPaneProvider.names[bundle ID]` when the table has it, else the
-localized `CFBundleDisplayName` (then `CFBundleName`) as `BundleInfo` reads it: the loctable entry
-for the language the user prefers, where the development region is a candidate and stands for
-its canonical code ("English" is "en"), and a winning region with no entry of its own means
-`Info.plist`'s values. The table holds two entries, Battery and Headphones, in English. A test
-checks every pane on the build machine for an "Extension" or "Settings" suffix or a run-together
-CamelCase name.
+A pane's name is `SettingsPaneProvider.names[bundle ID]` when that small table has it, else the
+localized `CFBundleDisplayName` (then `CFBundleName`) as `BundleInfo.localizedName(for:)` reads
+it: the loctable entry for the language the user prefers, where the development region is a
+candidate and stands for its canonical code ("English" is "en"), and a winning region with no
+entry of its own means `Info.plist`'s values. The table holds Battery and Headphones, in English.
+A test checks every pane on the build machine for an "Extension" or "Settings" suffix or a
+run-together CamelCase name.
+
+When the preferred language's name differs from the development region's, the region's name is
+an alternate match name, so "Menu Bar" finds "Menüleiste" for a German user. Panes named by the
+table get no alternate, since their bundle names are internal.
+
+`SettingsPaneProvider.hidden` leaves out Class Progress (ClassKit) and Classroom, which System
+Settings shows only on Macs a school manages; on others they are dead rows. The other panes with
+`providesAvailabilityCheck` (CDs & DVDs, Game Controllers, Mouse, Trackpad, Family) are kept: the
+check is the extension's own at runtime, and those panes exist on most Macs that have the
+hardware. `presentsInSidebar: false` (About, Device Management, Sharing, Startup Disk) is not a
+filter either: those panes are reached from General, and they open by URL.
 
 General is included by scanning the System Settings app's `PlugIns` folder as a second root, as
 it is a main sidebar entry and opens by URL like the others.

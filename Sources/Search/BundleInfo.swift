@@ -1,42 +1,28 @@
 import Foundation
 
-/// A bundle's `Info.plist` values overlaid with the localization the given languages pick, read
-/// from the files directly.
+/// A bundle's `Info.plist`, read from the file directly, and its localized values on request.
 ///
 /// `Bundle` isn't used: `Bundle(url:)` keeps one instance per path for the life of the process,
 /// so a rebuild after an app updates would read the values it cached the first time.
 struct BundleInfo {
-    /// A file that exists but isn't a property list dictionary.
-    struct ReadError: Error, CustomStringConvertible {
-        let file: URL
-        let reason: String
-
-        var description: String { "\(file.path): \(reason)" }
-    }
-
     /// The bundle's file name without its extension.
     let fileName: String
+    private let contents: URL
     /// The values in `Info.plist` as written, in the development region's language.
     private let base: [String: Any]
-    /// `base` with the chosen localization's values on top.
-    private let localized: [String: Any]
 
-    /// Reads the bundle at `url`. A bundle with no `Info.plist` has no values.
-    init(bundle url: URL, languages: [String]) throws {
+    /// Reads the `Info.plist` of the bundle at `url`. A bundle with none has no values; one that
+    /// doesn't parse throws an `IndexProblem`.
+    init(bundle url: URL) throws {
         fileName = url.deletingPathExtension().lastPathComponent
-        let contents = url.appending(path: "Contents", directoryHint: .isDirectory)
+        contents = url.appending(path: "Contents", directoryHint: .isDirectory)
         base = try Self.propertyList(at: contents.appending(path: "Info.plist")) ?? [:]
-        let region = base["CFBundleDevelopmentRegion"] as? String ?? "en"
-        let strings = try Self.localizedStrings(
-            in: contents.appending(path: "Resources", directoryHint: .isDirectory),
-            region: region, languages: languages)
-        localized = base.merging(strings) { $1 }
     }
 
-    /// The localized value of `key`, or nil when it is missing, empty or not a string.
-    func string(_ key: String) -> String? {
-        Self.string(key, in: localized)
-    }
+    var identifier: String? { Self.string("CFBundleIdentifier", in: base) }
+
+    /// The language `Info.plist`'s own values are in.
+    private var developmentRegion: String { base["CFBundleDevelopmentRegion"] as? String ?? "en" }
 
     /// The value of `key` in `Info.plist` when it is a dictionary.
     func dictionary(_ key: String) -> [String: Any]? {
@@ -53,14 +39,45 @@ struct BundleInfo {
         }
     }
 
-    /// The name Finder shows: the localized display name, then the localized bundle name, unless
-    /// the file was renamed away from the names in `Info.plist`, in which case the file name.
-    var displayName: String {
+    /// The name the localization `languages` pick gives: its display name, then its bundle name.
+    /// Reads the bundle's strings, so callers that may skip the bundle check `Info.plist` first.
+    func localizedName(for languages: [String]) throws -> String? {
+        let strings = try strings()
+        let language = Self.language(
+            for: languages, in: strings?.available ?? [], region: region(in: strings))
+        return Self.name(in: try values(in: language, from: strings))
+    }
+
+    /// `localizedName(for:)`, and the name the development region's localization gives, reading
+    /// the strings once.
+    func localizedNames(for languages: [String]) throws -> (preferred: String?, regional: String?) {
+        let strings = try strings()
+        let region = region(in: strings)
+        let language = Self.language(for: languages, in: strings?.available ?? [], region: region)
+        let preferred = Self.name(in: try values(in: language, from: strings))
+        guard language != region else { return (preferred, preferred) }
+        return (preferred, Self.name(in: try values(in: region, from: strings)))
+    }
+
+    /// The name Finder shows: `localizedName(for:)`, unless the file was renamed away from the
+    /// names in `Info.plist`, in which case the file name.
+    func displayName(for languages: [String]) throws -> String {
         let written = ["CFBundleDisplayName", "CFBundleName"].compactMap {
-            Self.string($0, in: base)
+            Self.string($0, in: base).map(Self.visible)
         }
         guard written.isEmpty || written.contains(fileName) else { return fileName }
-        return string("CFBundleDisplayName") ?? string("CFBundleName") ?? fileName
+        return try localizedName(for: languages) ?? fileName
+    }
+
+    /// The display name, then the bundle name, in `values`, with soft hyphens removed: German
+    /// names carry them ("System\u{AD}einstellungen") and some text views draw them.
+    private static func name(in values: [String: Any]) -> String? {
+        (string("CFBundleDisplayName", in: values) ?? string("CFBundleName", in: values))
+            .map(visible)
+    }
+
+    private static func visible(_ name: String) -> String {
+        name.replacingOccurrences(of: "\u{AD}", with: "")
     }
 
     /// The value of `key` in `values`, preferring its macOS form: Apple's bundles carry keys
@@ -73,42 +90,68 @@ struct BundleInfo {
         return nil
     }
 
-    /// The `InfoPlist` values of the localization `languages` prefer, from `InfoPlist.loctable`
-    /// when the bundle has one, as Apple's do, or else from `<language>.lproj/InfoPlist.strings`.
-    /// The development region is always a candidate; when it wins and has no table of its own,
-    /// `Info.plist` already holds its values.
-    private static func localizedStrings(
-        in resources: URL, region: String, languages: [String]
-    ) throws -> [String: Any] {
+    /// A bundle's localized `InfoPlist` values: the languages it has, and a reader for one.
+    private struct Strings {
         let available: Set<String>
         let read: (String) throws -> [String: Any]?
-        if let loctable = try propertyList(at: resources.appending(path: "InfoPlist.loctable")) {
+    }
+
+    /// The localized values, from `InfoPlist.loctable` when the bundle has one, as Apple's do,
+    /// or else from `<language>.lproj/InfoPlist.strings`. Nil when there are none.
+    private func strings() throws -> Strings? {
+        let resources = contents.appending(path: "Resources", directoryHint: .isDirectory)
+        if let loctable = try Self.propertyList(
+            at: resources.appending(path: "InfoPlist.loctable"))
+        {
             // The table also holds "LocProvenance", which says where each language came from.
-            available = Set(loctable.keys).subtracting(["LocProvenance"])
-            read = { loctable[$0] as? [String: Any] }
-        } else {
-            guard FileManager.default.fileExists(atPath: resources.path) else { return [:] }
-            let names = try FileManager.default.contentsOfDirectory(atPath: resources.path)
-            let suffix = ".lproj"
-            available = Set(
-                names.filter { $0.hasSuffix(suffix) }.map { String($0.dropLast(suffix.count)) })
-            read = { language in
-                try propertyList(
+            return Strings(
+                available: Set(loctable.keys).subtracting(["LocProvenance"]),
+                read: { loctable[$0] as? [String: Any] })
+        }
+        guard FileManager.default.fileExists(atPath: resources.path) else { return nil }
+        let names = try FileManager.default.contentsOfDirectory(atPath: resources.path)
+        let suffix = ".lproj"
+        return Strings(
+            available: Set(
+                names.filter { $0.hasSuffix(suffix) }.map { String($0.dropLast(suffix.count)) }),
+            read: { language in
+                try Self.propertyList(
                     at: resources.appending(path: "\(language)\(suffix)/InfoPlist.strings"))
-            }
-        }
-        // Some bundles name the region "English"; it stands for "en" when that's in the table.
+            })
+    }
+
+    /// The development region as the strings name it: some bundles say "English", which stands
+    /// for "en" when the strings have that.
+    private func region(in strings: Strings?) -> String {
         let canonical = Locale.canonicalLanguageIdentifier(from:)
-        var candidates = available
-        if !available.contains(where: { canonical($0) == canonical(region) }) {
-            candidates.insert(region)
+        return strings?.available.first { canonical($0) == canonical(developmentRegion) }
+            ?? developmentRegion
+    }
+
+    /// The localization `languages` prefer among `available` and `region`. The region is always
+    /// a candidate, so "en" wins over "en_GB" for an "en-US" user, and it is the answer when no
+    /// localization matches a preferred language, as `Bundle` does.
+    private static func language(
+        for languages: [String], in available: Set<String>, region: String
+    ) -> String {
+        let picked = Bundle.preferredLocalizations(
+            from: available.union([region]).sorted(), forPreferences: languages
+        ).first
+        // `preferredLocalizations` returns some candidate even when none matches, so its pick is
+        // kept only when it shares a language code with a preferred language.
+        let canonical = Locale.canonicalLanguageIdentifier(from:)
+        let code = { Locale.Language(identifier: canonical($0)).languageCode }
+        guard let picked, languages.contains(where: { code($0) == code(picked) }) else {
+            return region
         }
-        guard
-            let language = Bundle.preferredLocalizations(
-                from: candidates.sorted(), forPreferences: languages
-            ).first
-        else { return [:] }
-        return try read(language) ?? [:]
+        return picked
+    }
+
+    /// `Info.plist` with `language`'s strings on top. A language with no strings of its own,
+    /// such as the development region, is what `Info.plist` already says.
+    private func values(in language: String, from strings: Strings?) throws -> [String: Any] {
+        guard let table = try strings?.read(language) else { return base }
+        return base.merging(table) { $1 }
     }
 
     /// The dictionary in the property list at `url`, or nil when there is no file there.
@@ -118,15 +161,17 @@ struct BundleInfo {
             data = try Data(contentsOf: url)
         } catch CocoaError.fileReadNoSuchFile {
             return nil
+        } catch {
+            throw IndexProblem(url, error)
         }
         let value: Any
         do {
             value = try PropertyListSerialization.propertyList(from: data, format: nil)
         } catch {
-            throw ReadError(file: url, reason: "\(error)")
+            throw IndexProblem(path: url.path, reason: "It isn't a property list.")
         }
         guard let dictionary = value as? [String: Any] else {
-            throw ReadError(file: url, reason: "not a dictionary")
+            throw IndexProblem(path: url.path, reason: "It isn't a property list dictionary.")
         }
         return dictionary
     }

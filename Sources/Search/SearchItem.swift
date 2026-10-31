@@ -27,15 +27,25 @@ public struct SearchItem: Sendable, Identifiable {
     public let title: String
     public let subtitle: String?
     public let target: Target
+    /// Other names the item is found by but not shown with, such as an app's English file name
+    /// ("Calculator") when its title is localized ("Rechner").
+    public let alternateNames: [String]
     /// `title` folded for matching, built here so a keystroke never folds it.
     public let foldedTitle: FoldedText
+    /// `alternateNames` folded, likewise.
+    public let foldedAlternates: [FoldedText]
 
-    public init(id: String, kind: Kind, title: String, subtitle: String?, target: Target) {
+    public init(
+        id: String, kind: Kind, title: String, subtitle: String?, target: Target,
+        alternateNames: [String] = []
+    ) {
         self.id = id
         self.kind = kind
         self.title = title
         self.subtitle = subtitle
         self.target = target
+        self.alternateNames = alternateNames
         foldedTitle = FoldedText(title)
+        foldedAlternates = alternateNames.map(FoldedText.init)
     }
 }
