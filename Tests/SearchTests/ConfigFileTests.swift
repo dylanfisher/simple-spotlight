@@ -113,11 +113,11 @@ private func errors(_ text: String) -> [ConfigError] {
     ),
     (
         #""appFolders": ["Applications"]"#, "appFolders",
-        #"appFolders must be a list of folders, each a full path or one that starts with ~/, not ["Applications"]: "Applications" isn't a full path"#
+        #"appFolders must be a list of folders, each a full path, ~, or a path that starts with ~/, not ["Applications"]: "Applications" isn't a full path, ~, or a path that starts with ~/"#
     ),
     (
         #""appFolders": "/Applications""#, "appFolders",
-        #"appFolders must be a list of folders, each a full path or one that starts with ~/, not "/Applications""#
+        #"appFolders must be a list of folders, each a full path, ~, or a path that starts with ~/, not "/Applications""#
     ),
     (
         #""excludedApps": [""]"#, "excludedApps",

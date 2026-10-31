@@ -23,7 +23,7 @@ public struct Settings: Sendable, Equatable {
     /// The index these settings ask for: apps from `appFolders`, `~` standing for `home`, and
     /// System Settings panes, each only when its setting is on, less `excludedApps`.
     public func indexBuilder(
-        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        home: URL = HomePath.current,
         languages: [String] = Locale.preferredLanguages
     ) -> IndexBuilder {
         let apps =
@@ -195,8 +195,8 @@ extension Settings.Kind<KeyChord> {
 
 extension Settings.Kind<[String]> {
     static var folders: Self {
-        strings(takes: "a list of folders, each a full path or one that starts with ~/") {
-            HomePath.isValid($0) ? nil : "\(ConfigFile.json($0)) isn't a full path"
+        strings(takes: "a list of folders, each \(HomePath.accepted)") {
+            HomePath.isValid($0) ? nil : "\(ConfigFile.json($0)) isn't \(HomePath.accepted)"
         }
     }
 

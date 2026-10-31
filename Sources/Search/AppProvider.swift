@@ -29,7 +29,7 @@ public struct AppProvider: Sendable {
         coreServices: URL = URL(
             filePath: "/System/Library/CoreServices", directoryHint: .isDirectory),
         extraApps: [URL] = [finder],
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = HomePath.current
     ) {
         self.folders = folders
         self.languages = languages

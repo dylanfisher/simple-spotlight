@@ -17,7 +17,7 @@ public struct SettingsPaneProvider: Sendable {
     /// Where third-party `.prefPane` bundles are installed, for everyone and for the user whose
     /// home folder is `home`.
     public static func standardPreferencePaneFolders(
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
+        home: URL = HomePath.current
     ) -> [URL] {
         ["/Library/PreferencePanes", "~/Library/PreferencePanes"].map {
             HomePath.folder($0, home: home)
