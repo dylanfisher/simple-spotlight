@@ -535,6 +535,21 @@ private let spotlightShortcut = SystemHotKey(
     #expect(second.titles == ["⌘Space is also Spotlight's shortcut"])
 }
 
+/// The window showed the conflict, so the alert at the next launch would repeat it.
+@MainActor @Test func aConflictTheWindowShowedIsntAlertedAtTheNextLaunch() async {
+    let first = Fixture()
+    first.systemHotKeys = [spotlightShortcut]
+    first.coordinator.openSettings()
+    await first.apply(Search.Settings())
+    #expect(first.notices.isEmpty)
+
+    let second = Fixture(state: first.stateFolder)
+    second.systemHotKeys = [spotlightShortcut]
+    await second.apply(Search.Settings())
+
+    #expect(second.notices.isEmpty)
+}
+
 /// A press proves the chord reaches the app, so the system shortcut has been turned off.
 @MainActor @Test func aPressOfTheHotkeyClearsTheConflictRow() async throws {
     let fixture = Fixture()

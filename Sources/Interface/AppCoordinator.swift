@@ -228,7 +228,7 @@ public final class AppCoordinator {
     /// turned on uses it, as Spotlight's uses ⌘Space, or when registering it fails. The chord is
     /// registered even then, so it works once the user frees it. The conflict shows as a row and
     /// in the settings window, and the first time for the chord, as an alert too, unless the
-    /// settings window is open to say it.
+    /// settings window is open to say it, which counts as telling the user.
     private func register(_ chord: KeyChord) {
         var conflict: HotKeyConflict?
         do {
@@ -252,14 +252,17 @@ public final class AppCoordinator {
         log.error(
             "hotkey \(chord.text, privacy: .private): \(String(describing: conflict), privacy: .public)"
         )
-        guard !settingsWindow.isShown else { return }
+        let isShownInWindow = settingsWindow.isShown
         noticeDecision = Task { [weak self, appState, log, conflictNotice] in
-            do {
-                if try await appState.acknowledgedHotKeys().contains(chord.text) { return }
-            } catch {
-                log.error("state file: \(String(describing: error), privacy: .private)")
+            // The window says it already, so the alert is skipped now and at the next launch.
+            if !isShownInWindow {
+                do {
+                    if try await appState.acknowledgedHotKeys().contains(chord.text) { return }
+                } catch {
+                    log.error("state file: \(String(describing: error), privacy: .private)")
+                }
+                conflictNotice.show(chord, conflict: conflict) { self?.handle($0) }
             }
-            conflictNotice.show(chord, conflict: conflict) { self?.handle($0) }
             do {
                 try await appState.acknowledge(hotKey: chord.text)
             } catch {
