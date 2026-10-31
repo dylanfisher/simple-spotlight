@@ -20,11 +20,8 @@ public struct SearchIndex: Sendable {
 
     /// The `limit` best matches for `query`, best first. An empty query matches nothing.
     ///
-    /// `usage` gives an item's bonus from how often and how recently it was opened; `precedes`
-    /// says where it counts. It is called once per matching item.
-    public func results(
-        for query: String, limit: Int, usage: (SearchItem) -> Int = { _ in 0 }
-    ) -> [Result] {
+    /// `usage` gives each item's frecency; `precedes` says where it counts.
+    public func results(for query: String, limit: Int, usage: UsageBoost = .none) -> [Result] {
         precondition(limit >= 0, "a negative limit \(limit)")
         let query = FuzzyMatch.Query(query)
         guard limit > 0, !query.isEmpty else { return [] }
@@ -34,7 +31,8 @@ public struct SearchIndex: Sendable {
         top.reserveCapacity(limit + 1)
         for (index, item) in items.enumerated() {
             guard let (score, byTitle) = Self.score(query, item) else { continue }
-            let ranked = Ranked(score: score, byTitle: byTitle, usage: usage(item), index: index)
+            let ranked = Ranked(
+                score: score, byTitle: byTitle, frecency: usage.frecency(of: item.id), index: index)
             if top.count == limit, let last = top.last, !precedes(ranked, last) { continue }
             var low = 0
             var high = top.count
@@ -60,8 +58,12 @@ public struct SearchIndex: Sendable {
         let score: FuzzyMatch.Score
         /// Whether the title gave the score, rather than an alternate name.
         let byTitle: Bool
-        let usage: Int
+        let frecency: Double
         let index: Int
+
+        /// Whether usage lifts it to the level of the kind of match above its own.
+        var lifted: Bool { frecency >= UsageBoost.liftingFrecency }
+        var level: Int { score.kind.rawValue + (lifted ? 1 : 0) }
     }
 
     /// The best score of `item`'s title and alternate names, and whether the title gave it. The
@@ -77,13 +79,27 @@ public struct SearchIndex: Sendable {
         return best
     }
 
-    /// Whether `a` ranks before `b`: the higher `FuzzyMatch.Score` first (the kind of match,
-    /// then a subsequence's quality); at equal scores, the higher usage bonus, then the shorter
-    /// folded title, then the folded titles' byte order, then the id. Items that tie on all of
-    /// these, as duplicates do, keep the order they have in `items`.
+    /// Whether `a` ranks before `b`.
+    ///
+    /// An item is lifted when its frecency reaches `UsageBoost.liftingFrecency`. Its level is its
+    /// kind of match, one higher when lifted, so a lifted subsequence has the level of initials
+    /// and a lifted exact prefix a level of its own above every other. In order:
+    ///
+    /// 1. The higher level.
+    /// 2. Within a level, a lifted item before one that isn't. The lifted items of a level are
+    ///    the kind below its unlifted ones, so a much-used item passes the matches one kind
+    ///    better that aren't, and never a kind two better: those are a level above it at least.
+    /// 3. The higher subsequence quality, as items of a level and lift have the same kind.
+    /// 4. The higher frecency, so usage short of the lift breaks ties within a kind.
+    /// 5. The shorter folded title, then the folded titles' byte order, then the id.
+    ///
+    /// Items that tie on all of these, as duplicates do, keep the order they have in `items`.
+    /// Usage only orders matches: an item the query doesn't match isn't ranked at all.
     private func precedes(_ a: Ranked, _ b: Ranked) -> Bool {
-        if a.score != b.score { return a.score > b.score }
-        if a.usage != b.usage { return a.usage > b.usage }
+        if a.level != b.level { return a.level > b.level }
+        if a.lifted != b.lifted { return a.lifted }
+        if a.score.quality != b.score.quality { return a.score.quality > b.score.quality }
+        if a.frecency != b.frecency { return a.frecency > b.frecency }
         let first = items[a.index]
         let second = items[b.index]
         let x = first.foldedTitle.bytes

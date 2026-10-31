@@ -40,16 +40,68 @@ private func titles(_ query: String, _ names: [String], limit: Int = 20) -> [Str
     #expect(ranked == ["Mail", "Maps", "Mailbox", "Maps Extra"])
 }
 
-@Test func usageBreaksTiesWithinAClass() {
-    let index = SearchIndex(items: ["Mail", "Maps"].map(app))
-    let ranked = index.results(for: "ma", limit: 5) { $0.title == "Maps" ? 1 : 0 }
-    #expect(ranked.map(\.item.title) == ["Maps", "Mail"])
+private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+
+/// Usage in which each title was opened its number of times just now, so its frecency is that
+/// number.
+private func usage(_ opens: [String: Double]) -> UsageBoost {
+    let entries = opens.mapValues { UsageStore.Usage.Entry(count: $0, lastOpened: now) }
+    return UsageBoost(
+        UsageStore.Usage(
+            entries: Dictionary(uniqueKeysWithValues: entries.map { ("app:\($0)", $1) })),
+        at: now)
 }
 
-@Test func usageDoesNotCrossClasses() {
-    let index = SearchIndex(items: ["Safari", "Microsoft Safety Scanner"].map(app))
-    let ranked = index.results(for: "saf", limit: 5) { $0.title == "Safari" ? 0 : 100 }
-    #expect(ranked.map(\.item.title) == ["Safari", "Microsoft Safety Scanner"])
+private func titles(_ query: String, _ names: [String], opens: [String: Double]) -> [String] {
+    SearchIndex(items: names.map(app)).results(for: query, limit: 20, usage: usage(opens))
+        .map(\.item.title)
+}
+
+@Test func openingAnItemTwiceLiftsItAboveAnEqualMatch() {
+    #expect(titles("ma", ["Mail", "Maps"], opens: ["Maps": 2]) == ["Maps", "Mail"])
+}
+
+@Test func usageBelowTheLiftStaysWithinItsKind() {
+    let opens = UsageBoost.liftingFrecency.nextDown
+    #expect(
+        titles("code", ["Visual Studio Code", "Codex"], opens: ["Visual Studio Code": opens])
+            == ["Codex", "Visual Studio Code"])
+}
+
+@Test func usageAtTheLiftPassesTheMatchesOneKindBetter() {
+    let opens = UsageBoost.liftingFrecency
+    #expect(
+        titles("code", ["Visual Studio Code", "Codex"], opens: ["Visual Studio Code": opens])
+            == ["Visual Studio Code", "Codex"])
+}
+
+/// "Xcode" is a subsequence of "code", "Color Of Dark Edge" its initials, "Visual Studio Code" a
+/// word-start prefix and "Codex" an exact prefix.
+@Test func usageNeverLiftsAcrossTwoKinds() {
+    let names = ["Xcode", "Color Of Dark Edge", "Visual Studio Code", "Codex"]
+    #expect(
+        titles("code", names, opens: ["Xcode": 1_000])
+            == ["Codex", "Visual Studio Code", "Xcode", "Color Of Dark Edge"])
+}
+
+@Test func aLiftedMatchStillLosesToALiftedBetterKind() {
+    let opens = ["Visual Studio Code": 50.0, "Codex": UsageBoost.liftingFrecency]
+    #expect(
+        titles("code", ["Visual Studio Code", "Codex"], opens: opens)
+            == ["Codex", "Visual Studio Code"])
+}
+
+@Test func usageNeverMakesANonMatchMatch() {
+    #expect(titles("code", ["Safari", "Codex"], opens: ["Safari": 1_000]) == ["Codex"])
+}
+
+/// Decision 0002: two subsequences of different quality aren't a tie, so usage short of the
+/// lift doesn't reorder them.
+@Test func subsequenceQualityRanksBeforeUsageShortOfTheLift() {
+    let opens = UsageBoost.liftingFrecency.nextDown
+    #expect(
+        titles("code", ["Color Draw Editor", "Xcode"], opens: ["Color Draw Editor": opens])
+            == ["Xcode", "Color Draw Editor"])
 }
 
 @Test func limitIsHonored() {
@@ -96,17 +148,22 @@ private let calculator = SearchItem(
 
 @Suite(.serialized) struct SearchIndexTiming {
     /// B2 gives a keystroke 16 ms; the model's part is bounded at 5x that so a debug build under
-    /// load doesn't flake.
+    /// load doesn't flake. One item in ten has been opened, so usage is looked up and compared.
     @Test func ranksFiveThousandItemsWithinBudget() {
         let words = ["alpha", "bravo", "Charlie", "delta", "Echo", "foxtrot", "golf", "Hotel"]
         let items = (0..<5_000).map { n in
             app("\(words[n % 8]) \(words[(n / 8) % 8])\(words[(n / 64) % 8]) \(n)")
         }
         let index = SearchIndex(items: items)
+        var opened = UsageStore.Usage()
+        for (n, item) in items.enumerated() where n % 10 == 0 {
+            opened.entries[item.id] = .init(count: Double(n % 7), lastOpened: now)
+        }
+        let boost = UsageBoost(opened, at: now)
         let clock = ContinuousClock()
         var count = 0
         let elapsed = clock.measure {
-            count = index.results(for: "dec", limit: 8).count
+            count = index.results(for: "dec", limit: 8, usage: boost).count
         }
         #expect(count == 8)
         #expect(elapsed < .milliseconds(80))
