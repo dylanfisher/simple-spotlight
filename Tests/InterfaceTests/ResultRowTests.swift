@@ -89,6 +89,14 @@ private func boldCharacters(_ title: AttributedString) -> String {
     #expect(ResultRow.accessibilityLabel(for: bare) == "Quit")
 }
 
+/// The title is the answer and the subtitle the expression, which reads backwards as "14, 2*(3+4)".
+@Test func aCalculationReadsItsExpressionEqualsItsAnswer() throws {
+    let calculation = try #require(
+        CalculatorProvider(locale: Locale(identifier: "en_US")).item(for: "2*(3+4)"))
+
+    #expect(ResultRow.accessibilityLabel(for: calculation) == "2*(3+4) equals 14")
+}
+
 /// The icon is the row's anchor: most of its height, as in Finder's list.
 @Test func theIconFillsMostOfTheRow() {
     #expect(ResultRow.iconSize >= ResultRow.height * 0.8)

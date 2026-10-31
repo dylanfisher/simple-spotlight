@@ -102,9 +102,14 @@ struct ResultRow: View {
         item.kind == .calculation ? .neutral : .accent
     }
 
-    /// What VoiceOver reads for `item`'s row: its title, then its subtitle.
+    /// What VoiceOver reads for `item`'s row: its title, then its subtitle. A calculation reads
+    /// "<expression> equals <answer>", since its answer is the title and the expression the
+    /// subtitle. The panel announces the same text.
     nonisolated static func accessibilityLabel(for item: SearchItem) -> String {
-        [item.title, item.subtitle].compactMap { $0 }.joined(separator: ", ")
+        if item.kind == .calculation, let expression = item.subtitle {
+            return "\(expression) equals \(item.title)"
+        }
+        return [item.title, item.subtitle].compactMap { $0 }.joined(separator: ", ")
     }
 
     @ViewBuilder

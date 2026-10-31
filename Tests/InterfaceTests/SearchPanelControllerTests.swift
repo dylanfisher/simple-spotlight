@@ -711,6 +711,13 @@ extension Fixture {
     #expect(fixture.controller.panel.field.placeholderString == SearchPanel.searchLabel)
 }
 
+@MainActor @Test func aCalculationIsAnnouncedAsItsRowReadsIt() throws {
+    let fixture = Fixture()
+
+    try fixture.type("2*(3+4)")
+    #expect(fixture.announcements.last == "1 result, 2*(3+4) equals 14")
+}
+
 @MainActor @Test func theResultsAndEachMoveAreAnnounced() throws {
     let fixture = Fixture()
 

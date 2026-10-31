@@ -59,7 +59,8 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
   don't, they match the key where the US layout has the letter, as macOS's own menus do. The
   key codes come from `KeyChord.Key`.
 - **VoiceOver.** The field reads as a search field. Each row is a button labeled with its title
-  and subtitle, and marked selected when it is. The result count with the first row is
+  and subtitle (a calculation reads "<expression> equals <answer>"), and marked selected when
+  it is. The result count with the first row is
   announced after each search, and the newly selected row after each move.
 - **Search on the main actor.** A keystroke runs `CalculatorProvider` and
   `SearchIndex.results` on the main actor; the index measured about 0.15 ms for 2,000 items in a
