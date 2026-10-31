@@ -15,6 +15,8 @@ public struct Settings: Sendable, Equatable {
     public var appFolders: [String] = Keys.appFolders.defaultValue
     public var excludedApps: [String] = Keys.excludedApps.defaultValue
     public var maxResults: Int = Keys.maxResults.defaultValue
+    public var dimUnused: Bool = Keys.dimUnused.defaultValue
+    public var dimAfterDays: Int = Keys.dimAfterDays.defaultValue
     public var showOnAllDisplays: Bool = Keys.showOnAllDisplays.defaultValue
     public var launchAtLogin: Bool = Keys.launchAtLogin.defaultValue
 
@@ -92,6 +94,13 @@ extension Settings {
         static let maxResults = Key(
             \.maxResults, "maxResults", .integer(1...20), default: 8,
             "The most rows the panel shows.")
+        static let dimUnused = Key(
+            \.dimUnused, "dimUnused", .bool, default: true,
+            "Draw the apps and panes you haven't opened lately fainter, so the ones you use stand out."
+        )
+        static let dimAfterDays = Key(
+            \.dimAfterDays, "dimAfterDays", .integer(1...365), default: 30,
+            "With dimUnused, how many days after you last opened an app or pane its row dims.")
         static let showOnAllDisplays = Key(
             \.showOnAllDisplays, "showOnAllDisplays", .bool, default: false,
             "Show the panel on every display at once, typing in the one you're working on.")
@@ -102,7 +111,7 @@ extension Settings {
         /// Every key, in the order the default file lists them.
         static let all: [any AnyKey] = [
             hotkey, searchApplications, searchSystemSettings, calculator, appFolders,
-            excludedApps, maxResults, showOnAllDisplays, launchAtLogin,
+            excludedApps, maxResults, dimUnused, dimAfterDays, showOnAllDisplays, launchAtLogin,
         ]
     }
 

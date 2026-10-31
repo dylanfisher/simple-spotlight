@@ -51,6 +51,8 @@ private func errors(_ text: String) -> [ConfigError] {
           "appFolders": ["/Apps", "~/More"],
           "excludedApps": ["com.apple.Chess"],
           "maxResults": 20,
+          "dimUnused": false,
+          "dimAfterDays": 365,
           "showOnAllDisplays": true,
           "launchAtLogin": true
         }
@@ -63,6 +65,8 @@ private func errors(_ text: String) -> [ConfigError] {
     expected.appFolders = ["/Apps", "~/More"]
     expected.excludedApps = ["com.apple.Chess"]
     expected.maxResults = 20
+    expected.dimUnused = false
+    expected.dimAfterDays = 365
     expected.showOnAllDisplays = true
     expected.launchAtLogin = true
     #expect(parse(text) == .settings(expected))
@@ -100,6 +104,10 @@ private func errors(_ text: String) -> [ConfigError] {
     (
         #""maxResults": true"#, "maxResults",
         "maxResults must be a whole number from 1 to 20, not true"
+    ),
+    (
+        #""dimAfterDays": 0"#, "dimAfterDays",
+        "dimAfterDays must be a whole number from 1 to 365, not 0"
     ),
     (
         #""hotkey": "cmd+""#, "hotkey",

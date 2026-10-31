@@ -8,6 +8,11 @@ public struct SearchItem: Sendable, Identifiable {
         case app, settingsPane, calculation, command
         /// Something wrong, such as a config error, shown above the results.
         case problem
+
+        /// Whether opening an item of this kind counts toward usage: apps and panes, which the
+        /// user opens, and not answers, commands or problems
+        /// (docs/decisions/0010-usage-ranking.md).
+        public var countsAsOpen: Bool { self == .app || self == .settingsPane }
     }
 
     /// What opening the item does.

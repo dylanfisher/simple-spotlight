@@ -8,7 +8,8 @@ import Testing
     #expect(
         Settings.Keys.all.map(\.name) == [
             "hotkey", "searchApplications", "searchSystemSettings", "calculator", "appFolders",
-            "excludedApps", "maxResults", "showOnAllDisplays", "launchAtLogin",
+            "excludedApps", "maxResults", "dimUnused", "dimAfterDays", "showOnAllDisplays",
+            "launchAtLogin",
         ])
     let settings = Settings()
     #expect(settings.hotkey.text == "cmd+space")
@@ -22,6 +23,8 @@ import Testing
         ])
     #expect(settings.excludedApps.isEmpty)
     #expect(settings.maxResults == 8)
+    #expect(settings.dimUnused)
+    #expect(settings.dimAfterDays == 30)
     #expect(!settings.showOnAllDisplays)
     #expect(!settings.launchAtLogin)
 }
@@ -76,6 +79,8 @@ import Testing
     other.hotkey = KeyChord(.control, .k)
     other.calculator = false
     other.maxResults = 3
+    other.dimUnused = false
+    other.dimAfterDays = 7
     other.showOnAllDisplays = true
     other.launchAtLogin = true
     #expect(base.indexKeys == other.indexKeys)
