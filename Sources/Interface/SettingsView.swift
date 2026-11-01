@@ -18,7 +18,7 @@ struct SettingsView: View {
     static let width: CGFloat = 520
 
     var body: some View {
-        Form {
+        SettingsForm {
             if model.isFileBroken || model.writeError != nil {
                 problems
             }
@@ -31,7 +31,6 @@ struct SettingsView: View {
             .disabled(model.isFileBroken)
             file
         }
-        .groupedForm()
         .frame(width: Self.width)
         .frame(minHeight: 360, idealHeight: 680)
     }
@@ -305,14 +304,26 @@ private struct LabeledRow<Content: View>: View {
     }
 }
 
-extension View {
-    /// The grouped form of macOS's own settings windows. macOS 12 has no grouped style, and its
-    /// plain form doesn't scroll, so there the form scrolls inside a padded scroll view.
-    @ViewBuilder fileprivate func groupedForm() -> some View {
+/// The grouped form of macOS's own settings windows. macOS 12 has no grouped style, and its
+/// plain form lays rows out in columns that, in a scroll view, end up off the window, so there
+/// the sections stack in a padded scroll view instead.
+private struct SettingsForm<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
         if #available(macOS 13, *) {
-            formStyle(.grouped)
+            Form { content }
+                .formStyle(.grouped)
         } else {
-            ScrollView { padding(20) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) { content }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 }
