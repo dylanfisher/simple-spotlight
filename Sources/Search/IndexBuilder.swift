@@ -8,9 +8,10 @@ public struct IndexBuilder: Sendable {
         /// Both providers' problems, apps' first. A problem leaves out one folder or bundle; the
         /// rest of the index is still built.
         public let problems: [IndexProblem]
-        public let duration: Duration
+        /// In seconds.
+        public let duration: TimeInterval
 
-        public init(items: [SearchItem], problems: [IndexProblem], duration: Duration) {
+        public init(items: [SearchItem], problems: [IndexProblem], duration: TimeInterval) {
             self.items = items
             self.problems = problems
             self.duration = duration
@@ -40,8 +41,7 @@ public struct IndexBuilder: Sendable {
     /// Runs both providers at once, off the caller's actor, since they read the disk. Throws
     /// when cancelled, so a stale rebuild can be.
     @concurrent public func build() async throws(CancellationError) -> Build {
-        let clock = ContinuousClock()
-        let start = clock.now
+        let start = ProcessInfo.processInfo.systemUptime
         // `async let` loses a typed error, so each scan's comes back in a `Result`.
         async let appScan = Result { () throws(CancellationError) in try apps.items() }
         async let paneScan = Result { () throws(CancellationError) in try settingsPanes.items() }
@@ -49,6 +49,6 @@ public struct IndexBuilder: Sendable {
         return Build(
             items: (found.items + panes.items).filter { !excludedIDs.contains($0.id) },
             problems: found.problems + panes.problems,
-            duration: clock.now - start)
+            duration: ProcessInfo.processInfo.systemUptime - start)
     }
 }

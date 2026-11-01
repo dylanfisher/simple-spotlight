@@ -120,7 +120,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private let opener: any ResultOpener
     private let recordOpen: @MainActor (_ id: String, _ query: String) -> Void
     private let now: @MainActor () -> Date
-    private let configFile: @MainActor () async throws(ConfigError) -> URL
+    private let configFile: @MainActor () async -> Result<URL, ConfigError>
     private let openSettings: @MainActor () -> Void
     private let runCommand: @MainActor (String) -> Void
     private let quit: @MainActor () -> Void
@@ -142,7 +142,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     public init(
         index: SearchIndex, settings: Search.Settings, calculator: CalculatorProvider,
         opener: any ResultOpener, icons: IconCache,
-        configFile: @escaping @MainActor () async throws(ConfigError) -> URL,
+        configFile: @escaping @MainActor () async -> Result<URL, ConfigError>,
         openSettings: @escaping @MainActor () -> Void,
         runCommand: @escaping @MainActor (String) -> Void,
         recordOpen: @escaping @MainActor (_ id: String, _ query: String) -> Void,
@@ -177,7 +177,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         let panel = SearchPanel()
         let rows = ResultListHostingView(
             rootView: SearchView(state: state, icons: icons) { [weak self] in self?.open(row: $0) })
-        rows.sizingOptions = []
+        if #available(macOS 13, *) { rows.sizingOptions = [] }
         panel.install(rows: rows)
         panel.field.delegate = self
         panel.delegate = self
@@ -352,10 +352,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     public func openConfigFile() {
         hide()
         configFileOpened = Task {
-            do throws(ConfigError) {
-                opener.open(try await configFile())
-            } catch {
-                reportError(error)
+            switch await configFile() {
+            case .success(let url): opener.open(url)
+            case .failure(let error): reportError(error)
             }
         }
     }
@@ -570,7 +569,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         case (.command, _), (.problem, _), (_, .command):
             return nil
         case (_, .openFile(let url)):
-            return url.path(percentEncoded: false)
+            return url.path
         case (_, .openURL(let url)):
             return url.absoluteString
         case (_, .copyText(let text)):

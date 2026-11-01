@@ -1,5 +1,5 @@
 import AppKit
-import Observation
+import Combine
 import Search
 
 /// Records the hotkey in the settings window: a click starts listening, the next chord pressed
@@ -10,19 +10,19 @@ import Search
 /// While it listens, a local event monitor takes the window's keys before any view or key
 /// equivalent sees them, and `recordingChanged` is told, so the app can give up its hotkey:
 /// a registered chord never reaches the window as a key press.
-@MainActor @Observable
-public final class ShortcutRecorder {
+@MainActor
+public final class ShortcutRecorder: ObservableObject {
     /// Whether it is listening for a chord.
-    public private(set) var isRecording = false
+    @Published public private(set) var isRecording = false
     /// The modifiers held while listening, shown before the key comes.
-    private(set) var held: KeyChord.Modifiers = []
+    @Published private(set) var held: KeyChord.Modifiers = []
     /// Why the last chord pressed can't be the shortcut; nil once another is pressed.
-    private(set) var refusal: String?
+    @Published private(set) var refusal: String?
     /// Told each chord recorded.
     var recorded: @MainActor (KeyChord) -> Void = { _ in }
 
-    @ObservationIgnored private let recordingChanged: @MainActor (Bool) -> Void
-    @ObservationIgnored private var monitor: Any?
+    private let recordingChanged: @MainActor (Bool) -> Void
+    private var monitor: Any?
 
     init(recordingChanged: @escaping @MainActor (Bool) -> Void) {
         self.recordingChanged = recordingChanged

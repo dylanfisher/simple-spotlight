@@ -6,10 +6,10 @@ import Testing
 /// How many reports a monitor's `Burst` makes for changes at `offsets` from a start, checking
 /// its deadline before each change as the monitor's wait would.
 private func reports(
-    _ offsets: [Duration], quiet: Duration = AppFolderMonitor.quiet,
-    longest: Duration = AppFolderMonitor.longest
+    _ offsets: [TimeInterval], quiet: TimeInterval = AppFolderMonitor.quiet,
+    longest: TimeInterval = AppFolderMonitor.longest
 ) -> Int {
-    let start = ContinuousClock.now
+    let start: TimeInterval = 0
     var burst = AppFolderMonitor.Burst(quiet: quiet, longest: longest)
     var count = 0
     for offset in offsets {
@@ -25,29 +25,29 @@ private func reports(
 
 /// An app update: a write every 5 ms for 5 s.
 @Test func thousandsOfWritesInABundleAreOneReport() {
-    let writes = (0..<1_000).map { Duration.milliseconds(5 * $0) }
+    let writes = (0..<1_000).map { 0.005 * Double($0) }
     #expect(reports(writes) == 1)
 }
 
 @Test func aPauseLongerThanQuietEndsTheBurst() {
-    #expect(reports([.zero, .milliseconds(900), .milliseconds(2_000)]) == 2)
+    #expect(reports([0, 0.9, 2]) == 2)
 }
 
 @Test func changesThatNeverPauseReportEveryLongest() {
-    let writes = (0..<250).map { Duration.milliseconds(100 * $0) }
+    let writes = (0..<250).map { 0.1 * Double($0) }
     #expect(reports(writes) == 3)
 }
 
 @Test func aBurstIsDueQuietAfterItsLastChange() throws {
-    let start = ContinuousClock.now
-    var burst = AppFolderMonitor.Burst(quiet: .seconds(1), longest: .seconds(10))
+    let start: TimeInterval = 0
+    var burst = AppFolderMonitor.Burst(quiet: 1, longest: 10)
     let began = burst.change(at: start)
-    let continued = !burst.change(at: start + .milliseconds(500))
+    let continued = !burst.change(at: start + 0.5)
     #expect(began && continued)
 
-    #expect(burst.deadline == start + .milliseconds(1_500))
-    let early = burst.report(at: start + .milliseconds(1_499))
-    let due = burst.report(at: start + .milliseconds(1_500))
+    #expect(burst.deadline == start + 1.5)
+    let early = burst.report(at: start + 1.499)
+    let due = burst.report(at: start + 1.5)
     #expect(!early && due)
     #expect(burst.deadline == nil)
 }
@@ -144,7 +144,7 @@ private final class LiveIndex: Sendable {
         let (builds, feed) = AsyncStream.makeStream(of: [String].self)
         self.builds = builds
         monitor = AppFolderMonitor(
-            folders: builder.watchedFolders, quiet: .milliseconds(50),
+            folders: builder.watchedFolders, quiet: 0.05,
             failed: { Issue.record($0) },
             onChange: {
                 Task {

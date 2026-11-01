@@ -6,7 +6,7 @@ import Foundation
 /// burst of opens is written once, `writeDelay` after the first.
 public actor UsageStore {
     /// Returns after the duration, or throws once cancelled.
-    public typealias Sleep = @Sendable (Duration) async throws -> Void
+    public typealias Sleep = @Sendable (TimeInterval) async throws -> Void
 
     /// The file's one shape: per item id, how often and how recently it was opened, and from
     /// which queries. A file that doesn't decode is discarded, per the pre-release rule.
@@ -104,7 +104,7 @@ public actor UsageStore {
     }
 
     /// How long after an open the file is written, so the opens in between are written with it.
-    public static let writeDelay: Duration = .seconds(1)
+    public static let writeDelay: TimeInterval = 1
     /// An entry whose frecency has fallen below this is dropped when the file is loaded. It keeps
     /// the file to what was opened lately, including ids of apps since deleted, without the
     /// store knowing the index.
@@ -132,11 +132,12 @@ public actor UsageStore {
     /// told when a delayed write fails, since no caller is waiting for it, and when a file that
     /// doesn't decode is discarded.
     public init(
-        folder: URL, sleep: @escaping Sleep = { try await Task.sleep(for: $0) },
+        folder: URL,
+        sleep: @escaping Sleep = { try await Task.sleep(nanoseconds: UInt64($0 * 1e9)) },
         reportProblem: @escaping @Sendable (any Error) -> Void
     ) {
         self.folder = folder
-        file = folder.appending(path: "usage.json")
+        file = folder.appendingPathComponent("usage.json")
         self.sleep = sleep
         self.reportProblem = reportProblem
     }

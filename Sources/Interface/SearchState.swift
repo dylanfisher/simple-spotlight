@@ -1,9 +1,9 @@
-import Observation
+import Combine
 import Search
 
 /// What the rows show: set by `SearchPanelController`, read by `SearchView`.
-@MainActor @Observable
-final class SearchState {
+@MainActor
+final class SearchState: ObservableObject {
     /// One row: its item, the characters of its title the query matched, and whether it draws
     /// subdued.
     struct Row {
@@ -14,7 +14,7 @@ final class SearchState {
         let dimmed: Bool
     }
 
-    var rows: [Row] = []
+    @Published var rows: [Row] = []
     /// The index in `rows` of the selected row; 0 when there are none.
-    var selection = 0
+    @Published var selection = 0
 }

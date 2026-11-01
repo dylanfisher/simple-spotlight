@@ -23,22 +23,23 @@ public final class AppFolderMonitor: @unchecked Sendable {
 
     /// How long FSEvents batches changes before calling back: well under `quiet`, so the batches
     /// of one burst don't leave gaps that end it.
-    public static let latency: Duration = .milliseconds(250)
+    public static let latency: TimeInterval = 0.25
     /// The pause that ends a burst: longer than the gaps between the writes of one copy.
-    public static let quiet: Duration = .seconds(1)
+    public static let quiet: TimeInterval = 1
     /// The longest a burst waits, so changes that never pause still rebuild every so often.
-    public static let longest: Duration = .seconds(10)
+    public static let longest: TimeInterval = 10
 
     /// When a burst of changes is due to be reported.
     struct Burst: Equatable {
-        typealias Instant = ContinuousClock.Instant
+        /// Seconds of system uptime: macOS 12 has no `ContinuousClock`.
+        typealias Instant = TimeInterval
 
-        let quiet: Duration
-        let longest: Duration
+        let quiet: TimeInterval
+        let longest: TimeInterval
         private(set) var first: Instant?
         private(set) var last: Instant?
 
-        init(quiet: Duration, longest: Duration) {
+        init(quiet: TimeInterval, longest: TimeInterval) {
             self.quiet = quiet
             self.longest = longest
         }
@@ -77,7 +78,7 @@ public final class AppFolderMonitor: @unchecked Sendable {
     /// watch starts off the caller's actor, since FSEvents looks the folders up on the disk;
     /// `failed` is told if it won't.
     public init(
-        folders: [URL], quiet: Duration = quiet, longest: Duration = longest,
+        folders: [URL], quiet: TimeInterval = quiet, longest: TimeInterval = longest,
         watch: @escaping Watch = fileEvents, failed: @escaping @Sendable (any Error) -> Void,
         onChange: @escaping @Sendable () -> Void
     ) {
@@ -121,8 +122,10 @@ public final class AppFolderMonitor: @unchecked Sendable {
 
     deinit { stop() }
 
+    private static var now: Burst.Instant { ProcessInfo.processInfo.systemUptime }
+
     private func changed() {
-        let began = lock.withLock { !stopped && burst.change(at: .now) }
+        let began = lock.withLock { !stopped && burst.change(at: Self.now) }
         guard began else { return }
         Task { await self.reportWhenDue() }
     }
@@ -132,8 +135,9 @@ public final class AppFolderMonitor: @unchecked Sendable {
         while true {
             guard let deadline = lock.withLock({ stopped ? nil : burst.deadline }) else { return }
             // Not cancellable: `stop` ends the wait at its next check instead.
-            try? await Task.sleep(until: deadline, clock: .continuous)
-            let due = lock.withLock { !stopped && burst.report(at: .now) }
+            let wait = max(0, deadline - Self.now)
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1e9))
+            let due = lock.withLock { !stopped && burst.report(at: Self.now) }
             if due {
                 onChange()
                 return

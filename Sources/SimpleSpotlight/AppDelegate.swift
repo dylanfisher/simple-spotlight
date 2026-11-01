@@ -1,4 +1,5 @@
 import AppKit
+import Base
 import Interface
 import Search
 import os
@@ -35,15 +36,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             appName: appName, configFile: store.file,
             calculator: CalculatorProvider(locale: .autoupdatingCurrent),
             opener: WorkspaceOpener(reportError: reportError), icons: IconCache(),
-            makeConfigFile: { () throws(ConfigError) in try await store.makeDefaultFileIfMissing()
+            makeConfigFile: {
+                await Result { () async throws(ConfigError) in
+                    try await store.makeDefaultFileIfMissing()
+                }
             },
-            updateConfig: { change throws(ConfigError) in try await store.update(change) },
+            updateConfig: { change in
+                await Result { () async throws(ConfigError) in try await store.update(change) }
+            },
             hotKey: HotKey(), systemHotKeys: { try HotKey.systemHotKeys() },
             conflictNotice: HotKeyConflictNotice(appName: appName),
             loginItem: LoginItem(service: MainAppLoginItem(), appName: appName),
             appState: AppStateStore(folder: AppSupport.standardFolder()),
-            buildIndex: { settings throws(CancellationError) in
-                try await settings.indexBuilder().build()
+            buildIndex: { settings in
+                await Result { () async throws(CancellationError) in
+                    try await settings.indexBuilder().build()
+                }
             },
             watchIndex: { settings, onChange in
                 let monitor = AppFolderMonitor(

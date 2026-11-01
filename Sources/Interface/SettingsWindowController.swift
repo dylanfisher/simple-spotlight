@@ -42,13 +42,18 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
             let frontmost = NSWorkspace.shared.frontmostApplication
             previousApp = frontmost == .current ? nil : frontmost
         }
-        NSApplication.shared.activate()
+        if #available(macOS 14, *) {
+            NSApplication.shared.activate()
+        } else {
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
         window.makeKeyAndOrderFront(nil)
     }
 
     private func makeWindow() -> SettingsWindow {
         let hosting = NSHostingController(rootView: SettingsView(model: model))
-        hosting.sizingOptions = [.preferredContentSize]
+        // macOS 12's hosting controller sizes the window to the view without being asked.
+        if #available(macOS 13, *) { hosting.sizingOptions = [.preferredContentSize] }
         let window = SettingsWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable, .resizable]
         window.title = title
@@ -72,8 +77,12 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
             previous: previousApp, frontmost: NSWorkspace.shared.frontmostApplication)
         {
             // Since macOS 14 an app is activated only if the active app yields to it.
-            NSApplication.shared.yieldActivation(to: app)
-            app.activate()
+            if #available(macOS 14, *) {
+                NSApplication.shared.yieldActivation(to: app)
+                app.activate()
+            } else {
+                app.activate(options: .activateIgnoringOtherApps)
+            }
         }
         previousApp = nil
     }

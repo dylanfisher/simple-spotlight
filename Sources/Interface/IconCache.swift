@@ -1,21 +1,21 @@
 import AppKit
-import Observation
+import Combine
 
 /// The Finder icons of the rows' files, loaded off the main actor and kept by path. A row shows
 /// a placeholder until its icon lands; the rows redraw then, since they observe the cache.
-@MainActor @Observable
-public final class IconCache {
+@MainActor
+public final class IconCache: ObservableObject {
     /// Gives the icon of the file at the path, ready to draw without touching the disk.
     public typealias Load = @Sendable (String) async -> NSImage
 
-    @ObservationIgnored private let load: Load
-    private var images: [String: NSImage] = [:]
+    private let load: Load
+    @Published private var images: [String: NSImage] = [:]
     /// Every path asked for, loaded or loading, with the number of its latest request. A load
     /// that lands for a path forgotten or asked for again since is dropped.
-    @ObservationIgnored private var requested: [String: Int] = [:]
-    @ObservationIgnored private var requests = 0
+    private var requested: [String: Int] = [:]
+    private var requests = 0
     /// How many loads have landed, dropped ones included, for tests to wait on.
-    @ObservationIgnored private(set) var finishedLoads = 0
+    private(set) var finishedLoads = 0
 
     /// `load` defaults to `render`; tests replace it.
     public init(load: @escaping Load = { await IconCache.render($0) }) {

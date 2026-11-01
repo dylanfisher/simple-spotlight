@@ -40,7 +40,7 @@ private func boldCharacters(_ title: AttributedString) -> String {
         id: "/Library/PreferencePanes/Thing.prefPane", kind: .settingsPane, title: "Thing",
         subtitle: nil, target: .openFile(URL(filePath: "/Library/PreferencePanes/Thing.prefPane")))
 
-    let systemSettings = SettingsPaneProvider.systemSettingsApp.path(percentEncoded: false)
+    let systemSettings = SettingsPaneProvider.systemSettingsApp.path
     #expect(systemSettings.hasPrefix("/System/Applications/System Settings.app"))
     #expect(ResultRow.icon(for: app) == .file("/Applications/Safari.app"))
     #expect(ResultRow.icon(for: pane) == .file(systemSettings))
@@ -51,7 +51,7 @@ private func boldCharacters(_ title: AttributedString) -> String {
     let calculation = try #require(
         CalculatorProvider(locale: Locale(identifier: "en_US")).item(for: "1+1"))
 
-    let calculator = CalculatorProvider.calculatorApp.path(percentEncoded: false)
+    let calculator = CalculatorProvider.calculatorApp.path
     #expect(calculator.hasPrefix("/System/Applications/Calculator.app"))
     #expect(ResultRow.icon(for: calculation) == .file(calculator))
 }

@@ -13,7 +13,11 @@ public enum AlertPresenter {
     ) {
         RunLoop.main.perform(inModes: [.default]) {
             MainActor.assumeIsolated {
-                NSApplication.shared.activate()
+                if #available(macOS 14, *) {
+                    NSApplication.shared.activate()
+                } else {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
                 then(alert.runModal())
             }
         }

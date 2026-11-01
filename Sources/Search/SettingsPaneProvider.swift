@@ -9,11 +9,11 @@ public struct SettingsPaneProvider: Sendable {
     public static let extensionPoint = "com.apple.Settings.extension.ui"
     /// The System Settings app, which holds some panes and whose icon every pane's row shows.
     public static let systemSettingsApp = URL(
-        filePath: "/System/Applications/System Settings.app", directoryHint: .isDirectory)
+        fileURLWithPath: "/System/Applications/System Settings.app", isDirectory: true)
     /// Where macOS keeps its panes. Most are in ExtensionKit's folder; General is inside the app.
     public static let systemExtensionFolders = [
-        URL(filePath: "/System/Library/ExtensionKit/Extensions", directoryHint: .isDirectory),
-        systemSettingsApp.appending(path: "Contents/PlugIns", directoryHint: .isDirectory),
+        URL(fileURLWithPath: "/System/Library/ExtensionKit/Extensions", isDirectory: true),
+        systemSettingsApp.appendingPathComponent("Contents/PlugIns", isDirectory: true),
     ]
     /// Where third-party `.prefPane` bundles are installed, for everyone and for the user whose
     /// home folder is `home`.
@@ -141,7 +141,7 @@ public struct SettingsPaneProvider: Sendable {
         do {
             return try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
                 .filter { !$0.hasPrefix(".") }
-                .map { folder.appending(path: $0, directoryHint: .isDirectory) }
+                .map { folder.appendingPathComponent($0, isDirectory: true) }
                 .filter { $0.pathExtension == pathExtension }
         } catch {
             problems.append(IndexProblem(folder, error))

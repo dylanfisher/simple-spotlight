@@ -52,7 +52,7 @@ public final class WorkspaceOpener: ResultOpener {
     public func reveal(_ url: URL) {
         revealed = Task {
             guard await Self.exists(url) else {
-                reportError(OpenerError(description: "\(url.path(percentEncoded: false)) is gone"))
+                reportError(OpenerError(description: "\(url.path) is gone"))
                 return
             }
             workspace.activateFileViewerSelecting([url])
@@ -72,7 +72,7 @@ public final class WorkspaceOpener: ResultOpener {
 
     @concurrent
     private nonisolated static func exists(_ url: URL) async -> Bool {
-        FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
+        FileManager.default.fileExists(atPath: url.path)
     }
 
     /// The workspace calls back on a queue of its own.

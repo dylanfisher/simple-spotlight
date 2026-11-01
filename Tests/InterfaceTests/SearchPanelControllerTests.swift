@@ -71,7 +71,7 @@ private final class Fixture {
             index: SearchIndex(items: items), settings: Settings(),
             calculator: CalculatorProvider(locale: Locale(identifier: "en_US")),
             opener: opener, icons: IconCache(load: { _ in NSImage() }),
-            configFile: { [unowned self] () throws(ConfigError) in try configResult.get() },
+            configFile: { [unowned self] in configResult },
             openSettings: { [unowned self] in settingsOpened += 1 },
             runCommand: { [unowned self] in commands.append($0) },
             recordOpen: { [unowned self] in recorded.append(Recorded(id: $0, query: $1)) },

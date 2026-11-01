@@ -46,8 +46,8 @@ private final class StubHotKey: HotKeyRegistrar {
 /// Counts what was asked of the login item.
 @MainActor
 private final class StubLoginItem: LoginItemService {
-    var status: SMAppService.Status = .notRegistered
-    var statusAfterRegister: SMAppService.Status = .enabled
+    var status: LoginItemStatus = .notRegistered
+    var statusAfterRegister: LoginItemStatus = .enabled
     private(set) var calls = 0
 
     func register() throws {
@@ -160,17 +160,18 @@ private final class Fixture {
             appName: "Simple Spotlight", configFile: configURL,
             calculator: CalculatorProvider(locale: Locale(identifier: "en_US")),
             opener: opener, icons: IconCache(load: { _ in NSImage() }),
-            makeConfigFile: { () throws(ConfigError) in configURL },
-            updateConfig: { change throws(ConfigError) in await config.update(change) },
+            makeConfigFile: { .success(configURL) },
+            updateConfig: { change in
+                await config.update(change)
+                return .success(())
+            },
             hotKey: hotKey, systemHotKeys: { [unowned self] in systemHotKeys },
             conflictNotice: HotKeyConflictNotice(appName: "Simple Spotlight") {
                 [unowned self] content, _ in notices.append(content)
             },
             loginItem: LoginItem(service: loginItem, appName: "Simple Spotlight"),
             appState: AppStateStore(folder: stateFolder),
-            buildIndex: buildIndex ?? { settings throws(CancellationError) in
-                recorder.build(settings)
-            },
+            buildIndex: buildIndex ?? { settings in .success(recorder.build(settings)) },
             watchIndex: watch.watch,
             usage: UsageStore(folder: stateFolder) { Issue.record($0) },
             now: { [now] in now },
@@ -697,12 +698,13 @@ private actor Gates {
     let chess = SearchItem(
         id: "com.apple.Chess", kind: .app, title: "Chess", subtitle: nil,
         target: .openFile(URL(filePath: "/System/Applications/Chess.app")))
-    let fixture = Fixture(buildIndex: { settings throws(CancellationError) in
+    let fixture = Fixture(buildIndex: { settings in
         // Ignores cancellation, as a build past its last check does.
         let gate = settings.appFolders == ["/Old"] ? 1 : 2
         await gates.wait(gate)
-        return IndexBuilder.Build(
-            items: gate == 1 ? [safari] : [chess], problems: [], duration: .zero)
+        return .success(
+            IndexBuilder.Build(
+                items: gate == 1 ? [safari] : [chess], problems: [], duration: .zero))
     })
     var settings = Search.Settings()
     settings.appFolders = ["/Old"]

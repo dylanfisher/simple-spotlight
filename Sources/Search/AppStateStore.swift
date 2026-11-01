@@ -18,7 +18,7 @@ public actor AppStateStore {
     /// A store of `state.json` in `folder`, which is made when first written.
     public init(folder: URL) {
         self.folder = folder
-        file = folder.appending(path: "state.json")
+        file = folder.appendingPathComponent("state.json")
     }
 
     /// The chords whose conflict the user has been told about.

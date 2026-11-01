@@ -25,7 +25,7 @@ public enum ProblemItems {
         let title =
             first.line == nil ? "Config file \(first.reason)" : "Config error: \(first)"
         let opens =
-            "Return opens \((file.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath)"
+            "Return opens \((file.path as NSString).abbreviatingWithTildeInPath)"
         let more = errors.count - 1
         let subtitle =
             switch more {
@@ -45,7 +45,7 @@ public enum ProblemItems {
         let title: String
         var subtitle = first.description
         if problems.count == 1 {
-            title = "Couldn't search \(URL(filePath: first.path).lastPathComponent)"
+            title = "Couldn't search \(URL(fileURLWithPath: first.path).lastPathComponent)"
         } else {
             title = "Couldn't search \(problems.count) folders or apps"
             subtitle += " · Return copies all \(problems.count)"

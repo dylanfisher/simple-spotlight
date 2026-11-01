@@ -41,7 +41,14 @@ private func model(_ file: StubFile, recording: @escaping @MainActor (Bool) -> V
 {
     SettingsModel(
         configFile: configURL,
-        update: { change throws(ConfigError) in try await file.update(change) },
+        update: { change in
+            do throws(ConfigError) {
+                try await file.update(change)
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        },
         openConfigFile: {}, openKeyboardShortcuts: {}, recordingChanged: recording)
 }
 

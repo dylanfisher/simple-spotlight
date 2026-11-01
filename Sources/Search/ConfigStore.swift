@@ -37,7 +37,7 @@ public actor ConfigStore {
         @Sendable (_ folder: URL, _ onChange: @escaping @Sendable () -> Void) throws
         -> @Sendable () -> Void
     /// Returns after the duration, or throws once cancelled.
-    public typealias Sleep = @Sendable (Duration) async throws -> Void
+    public typealias Sleep = @Sendable (TimeInterval) async throws -> Void
 
     /// How many times `update` makes its change to the file's text before it gives up, when the
     /// file changes under each try.
@@ -46,12 +46,12 @@ public actor ConfigStore {
     /// How long after a read that finds the file gone or empty the store reads it again before
     /// it believes it. A save in place and a delete and create each take a few milliseconds;
     /// a real deletion still shows at once to a person.
-    public static let confirmDelay: Duration = .milliseconds(200)
+    public static let confirmDelay: TimeInterval = 0.2
 
     /// Watches a folder through FSEvents.
     public static let fileEvents: Watch = { folder, onChange in
         let watcher = try FolderWatcher(
-            paths: [folder.path], latency: .milliseconds(100), onChange: onChange)
+            paths: [folder.path], latency: 0.1, onChange: onChange)
         return { watcher.stop() }
     }
 
@@ -104,10 +104,10 @@ public actor ConfigStore {
     /// `sleep` before it believes a file gone or empty.
     public init(
         folder: URL, watch: @escaping Watch = fileEvents,
-        sleep: @escaping Sleep = { try await Task.sleep(for: $0) }
+        sleep: @escaping Sleep = { try await Task.sleep(nanoseconds: UInt64($0 * 1e9)) }
     ) {
         self.folder = folder
-        file = folder.appending(path: ConfigFile.name)
+        file = folder.appendingPathComponent(ConfigFile.name)
         self.watch = watch
         self.sleep = sleep
         (states, feed) = AsyncStream.makeStream(of: State.self)
@@ -346,7 +346,7 @@ public actor ConfigStore {
     private static func realPath(_ url: URL) -> URL? {
         guard let resolved = realpath(url.path, nil) else { return nil }
         defer { free(resolved) }
-        return URL(filePath: String(cString: resolved))
+        return URL(fileURLWithPath: String(cString: resolved))
     }
 
     /// Writes `ConfigFile.defaultText` as the file, which `found`, a read just made, says is
@@ -370,7 +370,8 @@ public actor ConfigStore {
         let link = linkTarget()
         let destination = link ?? file
         let partial = destination.deletingLastPathComponent()
-            .appending(path: ".\(destination.lastPathComponent).partial-\(UUID().uuidString)")
+            .appendingPathComponent(
+                ".\(destination.lastPathComponent).partial-\(UUID().uuidString)")
         do {
             if link == nil {
                 try files.createDirectory(at: folder, withIntermediateDirectories: true)

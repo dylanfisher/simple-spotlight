@@ -58,6 +58,6 @@ import Testing
         ] {
             #expect(ids.contains(id), "\(id)")
         }
-        #expect(build.duration < .seconds(1))
+        #expect(build.duration < 1)
     }
 }

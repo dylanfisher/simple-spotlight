@@ -40,7 +40,7 @@ public final class FolderWatcher: @unchecked Sendable {
     /// changes, the changes of `latency` batched together. The first change after a quiet
     /// period is reported at once.
     public init(
-        paths: [String], latency: Duration, onChange: @escaping @Sendable () -> Void
+        paths: [String], latency: TimeInterval, onChange: @escaping @Sendable () -> Void
     ) throws(StartFailed) {
         let receiver = Receiver(onChange: onChange)
         var context = FSEventStreamContext(
@@ -53,12 +53,10 @@ public final class FolderWatcher: @unchecked Sendable {
         let flags = FSEventStreamCreateFlags(
             kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot
                 | kFSEventStreamCreateFlagNoDefer)
-        let seconds =
-            Double(latency.components.seconds) + Double(latency.components.attoseconds) / 1e18
         guard
             let stream = FSEventStreamCreate(
                 nil, callback, &context, paths as CFArray,
-                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), seconds, flags)
+                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency, flags)
         else {
             // Creating the stream failed before it took ownership of the receiver.
             Unmanaged.passUnretained(receiver).release()

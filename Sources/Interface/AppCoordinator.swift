@@ -11,9 +11,9 @@ import os
 /// (docs/decisions/0015-settings-window.md).
 @MainActor
 public final class AppCoordinator {
-    /// Builds the index the settings ask for, off the main actor; throws when cancelled.
+    /// Builds the index the settings ask for, off the main actor; fails when cancelled.
     public typealias BuildIndex =
-        @Sendable (Search.Settings) async throws(CancellationError) -> IndexBuilder.Build
+        @Sendable (Search.Settings) async -> Result<IndexBuilder.Build, CancellationError>
     /// Starts watching the folders the index for the settings reads, calling `onChange` at the
     /// end of each burst of changes in them, and returns what stops the watch
     /// (docs/decisions/0011-live-index.md).
@@ -73,7 +73,7 @@ public final class AppCoordinator {
     public init(
         appName: String, configFile: URL, calculator: CalculatorProvider,
         opener: any ResultOpener, icons: IconCache,
-        makeConfigFile: @escaping @MainActor () async throws(ConfigError) -> URL,
+        makeConfigFile: @escaping @MainActor () async -> Result<URL, ConfigError>,
         updateConfig: @escaping SettingsModel.Update,
         hotKey: any HotKeyRegistrar,
         systemHotKeys: @escaping @MainActor () throws -> [SystemHotKey],
@@ -205,7 +205,7 @@ public final class AppCoordinator {
     /// transaction that puts the panel on screen with the field taking the keys: budget B1
     /// (docs/performance.md). The frame reaches the display at the next refresh after that.
     private func show() {
-        let start = ContinuousClock.now
+        let start = ProcessInfo.processInfo.systemUptime
         let wasShown = panel.isShown
         if let settings {
             loginItemProblem = loginItem.recheck(settings.launchAtLogin, shown: loginItemProblem)
@@ -217,7 +217,7 @@ public final class AppCoordinator {
         let count = shows
         // Replaces any completion block set earlier in this transaction; only this timing sets one.
         CATransaction.setCompletionBlock { [log] in
-            let elapsed = (ContinuousClock.now - start) / .milliseconds(1)
+            let elapsed = (ProcessInfo.processInfo.systemUptime - start) * 1000
             log.debug(
                 "show \(count, privacy: .public): \(elapsed, format: .fixed(precision: 1), privacy: .public) ms"
             )
@@ -284,13 +284,8 @@ public final class AppCoordinator {
     private func rebuildIndex(for settings: Search.Settings) {
         indexBuild?.cancel()
         indexBuild = Task { [buildIndex] in
-            let build: IndexBuilder.Build
-            do throws(CancellationError) {
-                build = try await buildIndex(settings)
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
+            guard case .success(let build) = await buildIndex(settings), !Task.isCancelled
+            else { return }
             install(build)
         }
     }
@@ -303,7 +298,7 @@ public final class AppCoordinator {
 
     private func install(_ build: IndexBuilder.Build) {
         log.info(
-            "index built: \(build.items.count) items, \(build.problems.count) problems in \(String(describing: build.duration), privacy: .public)"
+            "index built: \(build.items.count) items, \(build.problems.count) problems in \(build.duration, format: .fixed(precision: 3), privacy: .public) s"
         )
         for problem in build.problems {
             log.error("index: \(problem.description, privacy: .private)")

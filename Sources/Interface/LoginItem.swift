@@ -1,26 +1,48 @@
 import Search
 import ServiceManagement
 
+/// Where a login item stands, as `SMAppService.Status` says, which macOS 12 doesn't have.
+public enum LoginItemStatus: Sendable {
+    case notRegistered, enabled, requiresApproval, notFound
+}
+
 /// The app's login item as `SMAppService` keeps it. A protocol so tests can stand in for the
 /// user's real login items.
 @MainActor
 public protocol LoginItemService {
-    var status: SMAppService.Status { get }
+    var status: LoginItemStatus { get }
     func register() throws
     func unregister() throws
 }
 
-/// The login item of the running app's own bundle.
+/// The login item of the running app's own bundle. On macOS 12, which has no `SMAppService`,
+/// there is none, and registering throws.
 public struct MainAppLoginItem: LoginItemService {
+    /// Why registering fails on macOS 12.
+    struct Unavailable: LocalizedError {
+        var errorDescription: String? { "Opening at login needs macOS 13 or later." }
+    }
+
     public init() {}
 
-    public var status: SMAppService.Status { SMAppService.mainApp.status }
+    public var status: LoginItemStatus {
+        guard #available(macOS 13, *) else { return .notFound }
+        switch SMAppService.mainApp.status {
+        case .notRegistered: return .notRegistered
+        case .enabled: return .enabled
+        case .requiresApproval: return .requiresApproval
+        case .notFound: return .notFound
+        @unknown default: return .notFound
+        }
+    }
 
     public func register() throws {
+        guard #available(macOS 13, *) else { throw Unavailable() }
         try SMAppService.mainApp.register()
     }
 
     public func unregister() throws {
+        guard #available(macOS 13, *) else { return }
         try SMAppService.mainApp.unregister()
     }
 }
@@ -30,6 +52,11 @@ public struct MainAppLoginItem: LoginItemService {
 /// System Settings.
 @MainActor
 public struct LoginItem {
+    /// Whether this macOS can open the app at login, so the settings window offers it.
+    public static var isAvailable: Bool {
+        if #available(macOS 13, *) { true } else { false }
+    }
+
     /// System Settings' Login Items pane, where the user approves a login item.
     public static let settingsURL: URL = {
         guard let url = SettingsPaneProvider.paneURL("com.apple.LoginItems-Settings.extension")

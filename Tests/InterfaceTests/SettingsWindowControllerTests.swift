@@ -9,7 +9,7 @@ import Testing
 private func model() -> SettingsModel {
     SettingsModel(
         configFile: URL(filePath: "/tmp/simple-spotlight-test/config.json"),
-        update: { _ throws(ConfigError) in }, openConfigFile: {}, openKeyboardShortcuts: {},
+        update: { _ in .success(()) }, openConfigFile: {}, openKeyboardShortcuts: {},
         recordingChanged: { _ in })
 }
 

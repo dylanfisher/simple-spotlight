@@ -145,9 +145,9 @@ struct ResultRow: View {
     nonisolated static func icon(for item: SearchItem) -> Icon {
         switch item.kind {
         case .settingsPane:
-            return .file(SettingsPaneProvider.systemSettingsApp.path(percentEncoded: false))
+            return .file(SettingsPaneProvider.systemSettingsApp.path)
         case .calculation:
-            return .file(CalculatorProvider.calculatorApp.path(percentEncoded: false))
+            return .file(CalculatorProvider.calculatorApp.path)
         case .command:
             return .symbol("gearshape")
         case .problem:
@@ -156,7 +156,7 @@ struct ResultRow: View {
             guard case .openFile(let url) = item.target else {
                 preconditionFailure("the app \(item.id) has no file to open")
             }
-            return .file(url.path(percentEncoded: false))
+            return .file(url.path)
         }
     }
 

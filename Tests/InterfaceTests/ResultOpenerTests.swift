@@ -24,5 +24,5 @@ import Testing
     await opener.revealed?.value
 
     #expect(errors.count == 1)
-    #expect(errors.first?.contains(gone.path(percentEncoded: false)) == true)
+    #expect(errors.first?.contains(gone.path) == true)
 }

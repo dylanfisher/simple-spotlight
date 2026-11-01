@@ -3,33 +3,51 @@
 # hotkey, its login item) rather than a child of Terminal. Prints the bundle's path on stdout,
 # the only line there, for other scripts to use:
 #   -c debug|release   build configuration (default debug)
+#   -a arm64|x86_64|universal
+#                      the architectures to build for (default this Mac's); an Intel Mac
+#                      needs x86_64 or universal
 #   -o <path>          where to put the bundle (default .build/SimpleSpotlight.app); replaced
 #                      if it exists
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 config=debug
+arch=""
 app=.build/SimpleSpotlight.app
 while [ $# -gt 0 ]; do
   case "$1" in
     -c) config="${2:?-c needs debug or release}"; shift 2 ;;
     -o) app="${2:?-o needs a path ending in .app}"; shift 2 ;;
+    -a) arch="${2:?-a needs arm64, x86_64 or universal}"; shift 2 ;;
     *) printf 'unknown argument: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
 case "$config" in debug|release) ;; *) printf -- '-c must be debug or release, got %s\n' "$config" >&2; exit 1 ;; esac
 case "$app" in *.app) ;; *) printf -- '-o must end in .app, got %s\n' "$app" >&2; exit 1 ;; esac
+case "$arch" in "") archs=() ;; arm64|x86_64) archs=("$arch") ;; universal) archs=(arm64 x86_64) ;;
+  *) printf -- '-a must be arm64, x86_64 or universal, got %s\n' "$arch" >&2; exit 1 ;; esac
 
 # Build output goes to stderr so stdout carries only the bundle path.
 source scripts/swift-env
-swift_cmd build -c "$config" --product SimpleSpotlight >&2
-bin="$(swift_cmd build -c "$config" --show-bin-path)"
+executables=()
+if [ ${#archs[@]} -eq 0 ]; then
+  swift_cmd build -c "$config" --product SimpleSpotlight >&2
+  executables+=("$(swift_cmd build -c "$config" --show-bin-path)/SimpleSpotlight")
+else
+  # A triple names the OS version too; it is the bundle's minimum, as Package.swift sets it.
+  minimum=$(plutil -extract LSMinimumSystemVersion raw Sources/SimpleSpotlight/Info.plist)
+  for a in "${archs[@]}"; do
+    triple="$a-apple-macosx$minimum"
+    swift_cmd build -c "$config" --product SimpleSpotlight --triple "$triple" >&2
+    executables+=("$(swift_cmd build -c "$config" --triple "$triple" --show-bin-path)/SimpleSpotlight")
+  done
+fi
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 # The plist is copied as is: it is the only place the bundle ID is written.
 cp Sources/SimpleSpotlight/Info.plist "$app/Contents/Info.plist"
-cp "$bin/SimpleSpotlight" "$app/Contents/MacOS/SimpleSpotlight"
+lipo -create "${executables[@]}" -output "$app/Contents/MacOS/SimpleSpotlight"
 
 codesign --force --sign - "$app" >&2
 

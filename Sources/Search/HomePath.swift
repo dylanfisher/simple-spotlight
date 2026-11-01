@@ -17,16 +17,16 @@ public enum HomePath {
     /// The folder `path` names, a leading `~` standing for `home`.
     static func folder(_ path: String, home: URL) -> URL {
         guard let rest = underHome(path) else {
-            return URL(filePath: path, directoryHint: .isDirectory)
+            return URL(fileURLWithPath: path, isDirectory: true)
         }
-        return rest.isEmpty ? home : home.appending(path: rest, directoryHint: .isDirectory)
+        return rest.isEmpty ? home : home.appendingPathComponent(String(rest), isDirectory: true)
     }
 
     /// `folder` as the config file writes it: `~/…` inside `home`, `~` for `home` itself, and
     /// the full path anywhere else.
     public static func written(_ folder: URL, home: URL = current) -> String {
-        let path = folder.standardizedFileURL.path(percentEncoded: false)
-        let homePath = home.standardizedFileURL.path(percentEncoded: false)
+        let path = folder.standardizedFileURL.path
+        let homePath = home.standardizedFileURL.path
         let base = homePath.hasSuffix("/") ? String(homePath.dropLast()) : homePath
         let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
         if trimmed == base { return "~" }

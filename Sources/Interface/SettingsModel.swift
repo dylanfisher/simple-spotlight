@@ -1,5 +1,5 @@
+import Combine
 import Foundation
-import Observation
 import Search
 
 /// What the settings window shows and changes (docs/decisions/0015-settings-window.md).
@@ -9,12 +9,12 @@ import Search
 /// back. Until that read arrives, a change shows on top of the settings read, so a control
 /// doesn't flick back while the file is written. While the file has an error, nothing is
 /// written and the controls are off.
-@MainActor @Observable
-public final class SettingsModel {
+@MainActor
+public final class SettingsModel: ObservableObject {
     /// A change to make to the settings.
     public typealias Change = @Sendable (inout Search.Settings) -> Void
     /// Writes a change into the config file and reads it back, as `ConfigStore.update` does.
-    public typealias Update = @Sendable (@escaping Change) async throws(ConfigError) -> Void
+    public typealias Update = @Sendable (@escaping Change) async -> Result<Void, ConfigError>
 
     /// A conflict that keeps the hotkey from showing the panel, as the panel's problem row
     /// names it.
@@ -34,15 +34,15 @@ public final class SettingsModel {
     }
 
     /// The settings as the window shows them: the file's, with the changes not yet read back.
-    public private(set) var settings = Search.Settings()
+    @Published public private(set) var settings = Search.Settings()
     /// What is wrong with the config file, as the store last said.
-    public private(set) var errors: [ConfigError] = []
+    @Published public private(set) var errors: [ConfigError] = []
     /// Whether the file has an error, so the controls are off and nothing is written.
-    public private(set) var isFileBroken = false
+    @Published public private(set) var isFileBroken = false
     /// Why the last change couldn't be written; nil once one is.
-    public private(set) var writeError: ConfigError?
+    @Published public private(set) var writeError: ConfigError?
     /// Why the hotkey doesn't work, when it doesn't.
-    public var hotKeyConflict: Conflict?
+    @Published public var hotKeyConflict: Conflict?
     /// Records the hotkey.
     public let recorder: ShortcutRecorder
     /// Where the config file is, as the window shows it.
@@ -115,11 +115,9 @@ public final class SettingsModel {
         show()
         lastWrite = Task { [previous = lastWrite, update] in
             await previous?.value
-            do throws(ConfigError) {
-                try await update(change)
-                written(id)
-            } catch {
-                failed(id, error)
+            switch await update(change) {
+            case .success: written(id)
+            case .failure(let error): failed(id, error)
             }
         }
     }

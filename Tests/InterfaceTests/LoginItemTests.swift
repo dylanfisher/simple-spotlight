@@ -8,12 +8,12 @@ import Testing
 /// A login item that records what was asked of it.
 @MainActor
 private final class FakeService: LoginItemService {
-    var status: SMAppService.Status
-    var statusAfterRegister: SMAppService.Status = .enabled
+    var status: LoginItemStatus
+    var statusAfterRegister: LoginItemStatus = .enabled
     var failure: (any Error)?
     private(set) var calls: [String] = []
 
-    init(_ status: SMAppService.Status) {
+    init(_ status: LoginItemStatus) {
         self.status = status
     }
 

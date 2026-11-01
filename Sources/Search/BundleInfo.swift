@@ -15,8 +15,8 @@ struct BundleInfo {
     /// doesn't parse throws an `IndexProblem`.
     init(bundle url: URL) throws {
         fileName = url.deletingPathExtension().lastPathComponent
-        contents = url.appending(path: "Contents", directoryHint: .isDirectory)
-        base = try Self.propertyList(at: contents.appending(path: "Info.plist")) ?? [:]
+        contents = url.appendingPathComponent("Contents", isDirectory: true)
+        base = try Self.propertyList(at: contents.appendingPathComponent("Info.plist")) ?? [:]
     }
 
     var identifier: String? { Self.string("CFBundleIdentifier", in: base) }
@@ -99,9 +99,9 @@ struct BundleInfo {
     /// The localized values, from `InfoPlist.loctable` when the bundle has one, as Apple's do,
     /// or else from `<language>.lproj/InfoPlist.strings`. Nil when there are none.
     private func strings() throws -> Strings? {
-        let resources = contents.appending(path: "Resources", directoryHint: .isDirectory)
+        let resources = contents.appendingPathComponent("Resources", isDirectory: true)
         if let loctable = try Self.propertyList(
-            at: resources.appending(path: "InfoPlist.loctable"))
+            at: resources.appendingPathComponent("InfoPlist.loctable"))
         {
             // The table also holds "LocProvenance", which says where each language came from.
             return Strings(
@@ -116,7 +116,7 @@ struct BundleInfo {
                 names.filter { $0.hasSuffix(suffix) }.map { String($0.dropLast(suffix.count)) }),
             read: { language in
                 try Self.propertyList(
-                    at: resources.appending(path: "\(language)\(suffix)/InfoPlist.strings"))
+                    at: resources.appendingPathComponent("\(language)\(suffix)/InfoPlist.strings"))
             })
     }
 
@@ -140,7 +140,7 @@ struct BundleInfo {
         // `preferredLocalizations` returns some candidate even when none matches, so its pick is
         // kept only when it shares a language code with a preferred language.
         let canonical = Locale.canonicalLanguageIdentifier(from:)
-        let code = { Locale.Language(identifier: canonical($0)).languageCode }
+        let code = { Locale(identifier: canonical($0)).languageCode }
         guard let picked, languages.contains(where: { code($0) == code(picked) }) else {
             return region
         }

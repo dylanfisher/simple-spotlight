@@ -115,6 +115,23 @@ run bundle bash -c '
   fi
   echo "$app is $got"
 '
+# This branch runs on macOS 12. Availability checks catch newer APIs, but not a typed-throws
+# function type, whose metadata needs the macOS 15 Swift runtime: the symbol is weak-linked, so
+# the app launches and then crashes where it needs one (docs/decisions/0016-macos-12-branch.md).
+run runtime bash -c '
+  app=$(./scripts/bundle) || exit 1
+  bin="$app/Contents/MacOS/SimpleSpotlight"
+  want=$(plutil -extract LSMinimumSystemVersion raw Sources/SimpleSpotlight/Info.plist) || exit 1
+  got=$(otool -l "$bin" | awk "/LC_BUILD_VERSION/ { found = 1 } found && \$1 == \"minos\" { print \$2; exit }")
+  if [ "$got" != "$want" ]; then
+    echo "$bin targets macOS $got; Info.plist says $want. Package.swift sets the target." >&2; exit 1
+  fi
+  if nm -u "$bin" | grep -q "_swift_getExtendedFunctionTypeMetadata"; then
+    echo "$bin needs typed-throws function metadata, which macOS 12 lacks. Have the closure return a Result." >&2
+    exit 1
+  fi
+  echo "targets macOS $got; no typed-throws function metadata"
+'
 run test      ./scripts/test
 
 if [ ${#failures[@]} -gt 0 ]; then

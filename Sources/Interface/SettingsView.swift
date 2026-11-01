@@ -6,7 +6,14 @@ import UniformTypeIdentifiers
 /// out, with a control for each key of the config file and a button that opens the file
 /// (docs/decisions/0015-settings-window.md).
 struct SettingsView: View {
-    let model: SettingsModel
+    @ObservedObject var model: SettingsModel
+    /// The model's recorder, observed apart from the model, which doesn't republish its changes.
+    @ObservedObject private var recorder: ShortcutRecorder
+
+    init(model: SettingsModel) {
+        self.model = model
+        recorder = model.recorder
+    }
 
     static let width: CGFloat = 520
 
@@ -24,7 +31,7 @@ struct SettingsView: View {
             .disabled(model.isFileBroken)
             file
         }
-        .formStyle(.grouped)
+        .groupedForm()
         .frame(width: Self.width)
         .frame(minHeight: 360, idealHeight: 680)
     }
@@ -54,10 +61,10 @@ struct SettingsView: View {
 
     private var general: some View {
         Section {
-            LabeledContent("Shortcut") {
-                RecorderButton(recorder: model.recorder, chord: model.settings.hotkey)
+            LabeledRow("Shortcut") {
+                RecorderButton(recorder: recorder, chord: model.settings.hotkey)
             }
-            if let refusal = model.recorder.refusal, model.recorder.isRecording {
+            if let refusal = recorder.refusal, recorder.isRecording {
                 Text(refusal)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -65,7 +72,9 @@ struct SettingsView: View {
             if let conflict = model.hotKeyConflict, conflict.chord == model.settings.hotkey {
                 conflictRow(conflict)
             }
-            Toggle("Open at login", isOn: binding(\.launchAtLogin))
+            if LoginItem.isAvailable {
+                Toggle("Open at login", isOn: binding(\.launchAtLogin))
+            }
             Toggle(isOn: binding(\.showOnAllDisplays)) {
                 Text("Show on all displays")
                 Text("Typing goes to the display you're working on.")
@@ -96,7 +105,7 @@ struct SettingsView: View {
             Stepper(
                 value: binding(\.maxResults), in: Search.Settings.maxResultsRange
             ) {
-                LabeledContent("Most rows", value: "\(model.settings.maxResults)")
+                LabeledRow("Most rows") { Text("\(model.settings.maxResults)") }
             }
             Toggle(isOn: binding(\.dimUnused)) {
                 Text("Dim apps not opened lately")
@@ -105,10 +114,11 @@ struct SettingsView: View {
             Stepper(
                 value: binding(\.dimAfterDays), in: Search.Settings.dimAfterDaysRange
             ) {
-                LabeledContent(
-                    "Dim after",
-                    value: model.settings.dimAfterDays == 1
-                        ? "1 day" : "\(model.settings.dimAfterDays) days")
+                LabeledRow("Dim after") {
+                    Text(
+                        model.settings.dimAfterDays == 1
+                            ? "1 day" : "\(model.settings.dimAfterDays) days")
+                }
             }
             .disabled(!model.settings.dimUnused)
         }
@@ -139,9 +149,9 @@ struct SettingsView: View {
 
     private var file: some View {
         Section {
-            LabeledContent("Config file") {
+            LabeledRow("Config file") {
                 Text(
-                    (model.configFile.path(percentEncoded: false) as NSString)
+                    (model.configFile.path as NSString)
                         .abbreviatingWithTildeInPath
                 )
                 .textSelection(.enabled)
@@ -212,7 +222,7 @@ struct SettingsView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.applicationBundle]
-        panel.directoryURL = URL(filePath: "/Applications", directoryHint: .isDirectory)
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
         panel.prompt = "Leave Out"
         panel.message = "Choose apps to leave out of the results."
         choose(in: panel) { [model] urls in
@@ -252,7 +262,7 @@ struct SettingsView: View {
 /// The hotkey's recorder: the chord in a field-like button, which listens for a new one when
 /// clicked.
 private struct RecorderButton: View {
-    let recorder: ShortcutRecorder
+    @ObservedObject var recorder: ShortcutRecorder
     let chord: KeyChord
 
     var body: some View {
@@ -268,5 +278,41 @@ private struct RecorderButton: View {
         .accessibilityLabel("Shortcut")
         .accessibilityValue(recorder.isRecording ? "Recording" : chord.description)
         .accessibilityHint("Shows and hides the search panel")
+    }
+}
+
+/// A label with a value or control beside it, as `LabeledContent` lays it out in a grouped form.
+/// macOS 12 has neither, so there the two share a row, the value on the right.
+private struct LabeledRow<Content: View>: View {
+    let label: String
+    @ViewBuilder let content: Content
+
+    init(_ label: String, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.content = content()
+    }
+
+    var body: some View {
+        if #available(macOS 13, *) {
+            LabeledContent(label) { content }
+        } else {
+            HStack {
+                Text(label)
+                Spacer()
+                content
+            }
+        }
+    }
+}
+
+extension View {
+    /// The grouped form of macOS's own settings windows. macOS 12 has no grouped style, and its
+    /// plain form doesn't scroll, so there the form scrolls inside a padded scroll view.
+    @ViewBuilder fileprivate func groupedForm() -> some View {
+        if #available(macOS 13, *) {
+            formStyle(.grouped)
+        } else {
+            ScrollView { padding(20) }
+        }
     }
 }

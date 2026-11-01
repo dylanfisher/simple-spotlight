@@ -5,7 +5,7 @@ public struct AppProvider: Sendable {
     /// Finder isn't in any app folder, but people launch it by name. See
     /// docs/decisions/0005-reading-bundle-info.md.
     public static let finder = URL(
-        filePath: "/System/Library/CoreServices/Finder.app", directoryHint: .isDirectory)
+        fileURLWithPath: "/System/Library/CoreServices/Finder.app", isDirectory: true)
 
     /// The one app folder that may be missing without it being a problem, as most people don't
     /// have one.
@@ -38,7 +38,7 @@ public struct AppProvider: Sendable {
     public init(
         folders: [URL], languages: [String] = Locale.preferredLanguages,
         coreServices: URL = URL(
-            filePath: "/System/Library/CoreServices", directoryHint: .isDirectory),
+            fileURLWithPath: "/System/Library/CoreServices", isDirectory: true),
         extraApps: [URL] = [finder],
         home: URL = HomePath.current
     ) {
@@ -49,7 +49,7 @@ public struct AppProvider: Sendable {
         self.home = home
         let standard = Self.standardFolders.map { HomePath.folder($0, home: home) }
         pathlessFolders = Set(
-            (standard + standard.map { $0.appending(path: "Utilities") }
+            (standard + standard.map { $0.appendingPathComponent("Utilities") }
                 + [Self.finder.deletingLastPathComponent()])
                 .map(\.standardizedFileURL.path))
     }
@@ -119,7 +119,7 @@ public struct AppProvider: Sendable {
         }
         var apps: [URL] = []
         for name in names.sorted() where !name.hasPrefix(".") {
-            let entry = folder.appending(path: name, directoryHint: .isDirectory)
+            let entry = folder.appendingPathComponent(name, isDirectory: true)
             if entry.pathExtension.lowercased() == "app" {
                 apps.append(entry)
                 continue

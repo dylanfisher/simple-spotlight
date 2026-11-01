@@ -44,7 +44,7 @@ private func called(_ calls: Calls, within limit: Duration = .seconds(10)) async
 @Test func reportsAChangeInTheFolder() async throws {
     let folder = try TempFolder()
     let calls = Calls()
-    let watcher = try FolderWatcher(paths: [folder.url.path], latency: .milliseconds(50)) {
+    let watcher = try FolderWatcher(paths: [folder.url.path], latency: 0.05) {
         calls.record()
     }
     defer { watcher.stop() }
@@ -58,10 +58,10 @@ private func called(_ calls: Calls, within limit: Duration = .seconds(10)) async
     let folder = try TempFolder()
     let stoppedCalls = Calls()
     let liveCalls = Calls()
-    let stopped = try FolderWatcher(paths: [folder.url.path], latency: .milliseconds(50)) {
+    let stopped = try FolderWatcher(paths: [folder.url.path], latency: 0.05) {
         stoppedCalls.record()
     }
-    let live = try FolderWatcher(paths: [folder.url.path], latency: .milliseconds(50)) {
+    let live = try FolderWatcher(paths: [folder.url.path], latency: 0.05) {
         liveCalls.record()
     }
     defer { live.stop() }

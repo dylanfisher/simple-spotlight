@@ -8,7 +8,7 @@ public struct CalculatorProvider: Sendable {
     public static let itemID = "calculator"
     /// The Calculator app, whose icon the calculator's row shows.
     public static let calculatorApp = URL(
-        filePath: "/System/Applications/Calculator.app", directoryHint: .isDirectory)
+        fileURLWithPath: "/System/Applications/Calculator.app", isDirectory: true)
 
     /// Sets the separators of the row's title. The copied answer is the same in every locale.
     public let locale: Locale
