@@ -51,12 +51,28 @@ struct BundleInfo {
     /// `localizedName(for:)`, and the name the development region's localization gives, reading
     /// the strings once.
     func localizedNames(for languages: [String]) throws -> (preferred: String?, regional: String?) {
+        try localized(for: languages, Self.name(in:))
+    }
+
+    /// The value of `key` in the localization `languages` pick and in the development region's,
+    /// as `localizedNames(for:)` reads names.
+    func localizedStrings(_ key: String, for languages: [String]) throws -> (
+        preferred: String?, regional: String?
+    ) {
+        try localized(for: languages) { Self.string(key, in: $0).map(Self.visible) }
+    }
+
+    /// What `pick` finds in the values of the localization `languages` pick and of the
+    /// development region's, reading the strings once.
+    private func localized(
+        for languages: [String], _ pick: ([String: Any]) -> String?
+    ) throws -> (preferred: String?, regional: String?) {
         let strings = try strings()
         let region = region(in: strings)
         let language = Self.language(for: languages, in: strings?.available ?? [], region: region)
-        let preferred = Self.name(in: try values(in: language, from: strings))
+        let preferred = pick(try values(in: language, from: strings))
         guard language != region else { return (preferred, preferred) }
-        return (preferred, Self.name(in: try values(in: region, from: strings)))
+        return (preferred, pick(try values(in: region, from: strings)))
     }
 
     /// The name Finder shows: `localizedName(for:)`, unless the file was renamed away from the

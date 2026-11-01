@@ -1,20 +1,37 @@
 import Foundation
 
 /// Finds the System Settings panes that can be opened directly, and third-party `.prefPane`
-/// bundles, and turns each into a row.
+/// bundles, and turns each into a row. On macOS 12 the system's panes are System Preferences'
+/// `.prefPane` bundles instead (docs/decisions/0016-macos-12-branch.md).
 public struct SettingsPaneProvider: Sendable {
-    /// The subtitle of every pane's row.
-    public static let subtitle = "System Settings"
+    /// Whether this macOS has System Settings, made of extensions, rather than macOS 12's System
+    /// Preferences, made of `.prefPane` bundles.
+    public static var hasSystemSettings: Bool {
+        if #available(macOS 13, *) { true } else { false }
+    }
+    /// The subtitle of every pane's row: the settings app's name.
+    public static let subtitle = hasSystemSettings ? "System Settings" : "System Preferences"
     /// The ExtensionKit extension point of a System Settings pane.
     public static let extensionPoint = "com.apple.Settings.extension.ui"
-    /// The System Settings app, which holds some panes and whose icon every pane's row shows.
+    /// The System Settings app, or System Preferences on macOS 12, which holds some panes and
+    /// whose icon every pane's row shows.
     public static let systemSettingsApp = URL(
-        fileURLWithPath: "/System/Applications/System Settings.app", isDirectory: true)
+        fileURLWithPath: hasSystemSettings
+            ? "/System/Applications/System Settings.app"
+            : "/System/Applications/System Preferences.app",
+        isDirectory: true)
     /// Where macOS keeps its panes. Most are in ExtensionKit's folder; General is inside the app.
-    public static let systemExtensionFolders = [
-        URL(fileURLWithPath: "/System/Library/ExtensionKit/Extensions", isDirectory: true),
-        systemSettingsApp.appendingPathComponent("Contents/PlugIns", isDirectory: true),
-    ]
+    /// None on macOS 12.
+    public static let systemExtensionFolders =
+        hasSystemSettings
+        ? [
+            URL(fileURLWithPath: "/System/Library/ExtensionKit/Extensions", isDirectory: true),
+            systemSettingsApp.appendingPathComponent("Contents/PlugIns", isDirectory: true),
+        ] : []
+    /// Where macOS 12 keeps System Preferences' panes. None on later versions.
+    public static let systemPreferencePaneFolders =
+        hasSystemSettings
+        ? [] : [URL(fileURLWithPath: "/System/Library/PreferencePanes", isDirectory: true)]
     /// Where third-party `.prefPane` bundles are installed, for everyone and for the user whose
     /// home folder is `home`.
     public static func standardPreferencePaneFolders(
@@ -46,6 +63,9 @@ public struct SettingsPaneProvider: Sendable {
 
     /// Scanned in order for `.appex` bundles. A missing one is a problem.
     public let extensionFolders: [URL]
+    /// Scanned in order for the `.prefPane` bundles of System Preferences, named as its window
+    /// labels them. A missing one is a problem.
+    public let systemPreferencePaneFolders: [URL]
     /// Scanned in order for `.prefPane` bundles. A missing one has none.
     public let preferencePaneFolders: [URL]
     /// Picks the localization each pane's name is read in, as `Locale.preferredLanguages` does.
@@ -53,16 +73,18 @@ public struct SettingsPaneProvider: Sendable {
 
     public init(
         extensionFolders: [URL] = systemExtensionFolders,
+        systemPreferencePaneFolders: [URL] = systemPreferencePaneFolders,
         preferencePaneFolders: [URL] = standardPreferencePaneFolders(),
         languages: [String] = Locale.preferredLanguages
     ) {
         self.extensionFolders = extensionFolders
+        self.systemPreferencePaneFolders = systemPreferencePaneFolders
         self.preferencePaneFolders = preferencePaneFolders
         self.languages = languages
     }
 
-    /// The panes, then the `.prefPane` bundles, each in folder order; a `.prefPane` whose bundle
-    /// ID was already found is left out. A folder that can't be listed or a bundle that can't be
+    /// The panes, then System Preferences' `.prefPane` bundles, then the others, each in folder
+    /// order; a `.prefPane` whose bundle ID was already found is left out. A folder that can't be listed or a bundle that can't be
     /// read is left out and reported as a problem. Throws when cancelled.
     ///
     /// It blocks on the disk; callers go through `IndexBuilder.build()`, which runs it off the
@@ -81,6 +103,17 @@ public struct SettingsPaneProvider: Sendable {
             }
         }
         var seen: Set<String> = []
+        for folder in systemPreferencePaneFolders {
+            for url in Self.bundles(in: folder, withExtension: "prefPane", problems: &problems) {
+                if Task.isCancelled { throw CancellationError() }
+                do {
+                    let item = try systemPreferencePane(at: url)
+                    if seen.insert(item.id).inserted { items.append(item) }
+                } catch {
+                    problems.append(IndexProblem(url, error))
+                }
+            }
+        }
         for folder in preferencePaneFolders
         where FileManager.default.fileExists(atPath: folder.path) {
             for url in Self.bundles(in: folder, withExtension: "prefPane", problems: &problems) {
@@ -131,6 +164,29 @@ public struct SettingsPaneProvider: Sendable {
             id: id, kind: .settingsPane, title: title, subtitle: Self.subtitle,
             target: .openURL(target),
             alternateNames: regional.flatMap { $0 == title ? nil : [$0] } ?? [])
+    }
+
+    /// The row for System Preferences' pane at `url`, named by its icon label, which is what
+    /// System Preferences shows: the bundles' own names are often internal ("Appearance" for
+    /// General, "DesktopScreenEffectsPref"). A label may hold a line break, for the icon grid;
+    /// the row shows it on one line.
+    private func systemPreferencePane(at url: URL) throws -> SearchItem {
+        let info = try BundleInfo(bundle: url)
+        let id = info.identifier ?? url.path
+        let oneLine = { (label: String) in
+            label.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        }
+        let labels = try info.localizedStrings("NSPrefPaneIconLabel", for: languages)
+        guard let preferred = labels.preferred.map(oneLine) else {
+            return SearchItem(
+                id: id, kind: .settingsPane, title: try info.displayName(for: languages),
+                subtitle: Self.subtitle, target: .openFile(url))
+        }
+        let regional = labels.regional.map(oneLine)
+        return SearchItem(
+            id: id, kind: .settingsPane, title: preferred, subtitle: Self.subtitle,
+            target: .openFile(url),
+            alternateNames: regional.flatMap { $0 == preferred ? nil : [$0] } ?? [])
     }
 
     /// The bundles in `folder` with the path extension `pathExtension`, sorted by name. A folder

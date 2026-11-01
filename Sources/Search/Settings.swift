@@ -68,7 +68,8 @@ public struct Settings: Sendable, Equatable {
                         home: home),
                     languages: languages)
                 : SettingsPaneProvider(
-                    extensionFolders: [], preferencePaneFolders: [], languages: languages)
+                    extensionFolders: [], systemPreferencePaneFolders: [],
+                    preferencePaneFolders: [], languages: languages)
             return IndexBuilder(apps: apps, settingsPanes: panes, excludedIDs: Set(excludedApps))
         }
     }

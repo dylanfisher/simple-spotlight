@@ -27,12 +27,14 @@ public final class HotKeyConflictNotice {
     public typealias Present =
         @MainActor (Content, _ chosen: @escaping @MainActor (Choice) -> Void) -> Void
 
-    /// The Keyboard Shortcuts section of System Settings' Keyboard pane, where Spotlight's
-    /// shortcuts are turned off.
+    /// The Keyboard Shortcuts section of System Settings' Keyboard pane, or System Preferences'
+    /// on macOS 12, where Spotlight's shortcuts are turned off.
     public static let keyboardShortcutsURL: URL = {
         guard
             let url = SettingsPaneProvider.paneURL(
-                "com.apple.Keyboard-Settings.extension", anchor: "Shortcuts")
+                SettingsPaneProvider.hasSystemSettings
+                    ? "com.apple.Keyboard-Settings.extension" : "com.apple.preference.keyboard",
+                anchor: "Shortcuts")
         else { preconditionFailure("the Keyboard pane has no URL") }
         return url
     }()

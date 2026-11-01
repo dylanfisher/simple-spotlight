@@ -123,6 +123,60 @@ private func panes(
     #expect(found.map(\.title) == ["New"])
 }
 
+/// Scans `folder` as macOS 12's System Preferences panes, with no extensions or other panes.
+private func systemPreferencePanes(
+    in folder: URL, preferencePanes: [URL] = [], languages: [String] = ["en"]
+) throws -> [SearchItem] {
+    let found = try SettingsPaneProvider(
+        extensionFolders: [], systemPreferencePaneFolders: [folder],
+        preferencePaneFolders: preferencePanes, languages: languages
+    ).items()
+    #expect(found.problems.isEmpty)
+    return found.items
+}
+
+@Test func systemPreferencePanesAreNamedByTheirIconLabelOnOneLine() throws {
+    let root = try TempFolder()
+    let url = root.url.appending(
+        path: "DesktopScreenEffectsPref.prefPane", directoryHint: .isDirectory)
+    try makeBundle(
+        at: url,
+        info: [
+            "CFBundleIdentifier": "test.desktop", "CFBundleName": "DesktopScreenEffectsPref",
+            "NSPrefPaneIconLabel": "Desktop &\nScreen Saver",
+        ],
+        localized: ["de": ["NSPrefPaneIconLabel": "Schreibtisch &\nBildschirmschoner"]])
+    let item = try #require(try systemPreferencePanes(in: root.url).first)
+    #expect(item.id == "test.desktop")
+    #expect(item.kind == .settingsPane)
+    #expect(item.title == "Desktop & Screen Saver")
+    #expect(item.subtitle == SettingsPaneProvider.subtitle)
+    #expect(item.target == .openFile(url))
+    let german = try #require(try systemPreferencePanes(in: root.url, languages: ["de-DE"]).first)
+    #expect(german.title == "Schreibtisch & Bildschirmschoner")
+    #expect(german.alternateNames == ["Desktop & Screen Saver"])
+}
+
+@Test func aSystemPreferencePaneWithNoIconLabelUsesItsBundleName() throws {
+    let root = try TempFolder()
+    try makeBundle(
+        at: root.url.appending(path: "Network.prefPane", directoryHint: .isDirectory),
+        info: ["CFBundleIdentifier": "test.network", "CFBundleName": "Network"])
+    #expect(try systemPreferencePanes(in: root.url).map(\.title) == ["Network"])
+}
+
+@Test func aPreferencePaneWithASystemPanesIDIsLeftOut() throws {
+    let system = try TempFolder()
+    let other = try TempFolder()
+    for (folder, label) in [(system, "System"), (other, "Other")] {
+        try makeBundle(
+            at: folder.url.appending(path: "\(label).prefPane", directoryHint: .isDirectory),
+            info: ["CFBundleIdentifier": "test.same", "NSPrefPaneIconLabel": label])
+    }
+    let found = try systemPreferencePanes(in: system.url, preferencePanes: [other.url])
+    #expect(found.map(\.title) == ["System"])
+}
+
 @Test func aMissingExtensionFolderIsAProblem() throws {
     let root = try TempFolder()
     let missing = root.url.appending(path: "Missing")
