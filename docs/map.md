@@ -21,7 +21,7 @@ against a codebase you haven't searched.
 | a result type, provider or ranking rule | `ls Sources/Search/` |
 | a view, window or controller | `ls Sources/Interface/` |
 | a free function | `rg '^\s*(public )?func ' Sources/Base/` |
-| a file or folder path | `rg 'HomePath.folder\|filePath: "/' Sources/Search/` — paths are built in Search, `~` through `HomePath` |
+| a file or folder path | `rg 'HomePath.folder\|fileURLWithPath: "/' Sources/Search/` — paths are built in Search, `~` through `HomePath` |
 | a preference or config key | `rg '<key>' Sources/Search/Settings.swift` — every key is declared there, in `Settings.Keys` |
 | a type | `rg '(struct\|class\|enum\|protocol\|actor) <Name>\b'` |
 

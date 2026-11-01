@@ -6,7 +6,7 @@ Instructions for AI coding agents working in this repo. Humans: see [README.md](
 
 ## Stack
 
-- **Language:** Swift 6 (language mode 6, tools 6.2), macOS 15+
+- **Language:** Swift 6 (language mode 6, tools 6.2), macOS 12+ on this `macos-12` branch ([0016](docs/decisions/0016-macos-12-branch.md))
 - **Package manager:** SwiftPM only — no `.xcodeproj`, no dependencies
 - **Framework:** AppKit for the panel and app shell; SwiftUI for the views inside it
 - **Test framework:** Swift Testing (`import Testing`, `@Test`)

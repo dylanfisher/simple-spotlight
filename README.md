@@ -3,7 +3,14 @@
 A minimal, fast Spotlight replacement for macOS: apps, System Settings, and a calculator, behind
 ⌘Space.
 
-Requires macOS 15 or later.
+Requires macOS 12 or later. This is the `macos-12` branch, which also runs on Intel Macs; see
+[docs/decisions/0016-macos-12-branch.md](docs/decisions/0016-macos-12-branch.md). On macOS 12 it
+searches System Preferences panes, and it can't open at login.
+
+To build for an Intel Mac from an Apple Silicon one, run
+`./scripts/bundle -c release -a universal -o "dist/Simple Spotlight.app"`, copy the app over,
+and run `xattr -dr com.apple.quarantine "Simple Spotlight.app"` on it there, since the app is ad
+hoc signed.
 
 ## Use it
 
