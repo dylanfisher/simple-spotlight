@@ -38,7 +38,7 @@ struct SettingsView: View {
     // MARK: Sections
 
     private var problems: some View {
-        Section {
+        SettingsSection {
             VStack(alignment: .leading, spacing: 6) {
                 Label(
                     model.isFileBroken
@@ -59,7 +59,7 @@ struct SettingsView: View {
     }
 
     private var general: some View {
-        Section {
+        SettingsSection {
             LabeledRow("Shortcut") {
                 RecorderButton(recorder: recorder, chord: model.settings.hotkey)
             }
@@ -74,10 +74,9 @@ struct SettingsView: View {
             if LoginItem.isAvailable {
                 Toggle("Open at login", isOn: binding(\.launchAtLogin))
             }
-            Toggle(isOn: binding(\.showOnAllDisplays)) {
-                Text("Show on all displays")
-                Text("Typing goes to the display you're working on.")
-            }
+            DescribedToggle(
+                "Show on all displays", detail: "Typing goes to the display you're working on.",
+                isOn: binding(\.showOnAllDisplays))
         }
     }
 
@@ -97,7 +96,7 @@ struct SettingsView: View {
     }
 
     private var results: some View {
-        Section("Results") {
+        SettingsSection("Results") {
             Toggle("Apps", isOn: binding(\.searchApplications))
             Toggle(SettingsPaneProvider.subtitle, isOn: binding(\.searchSystemSettings))
             Toggle("Calculator", isOn: binding(\.calculator))
@@ -106,10 +105,9 @@ struct SettingsView: View {
             ) {
                 LabeledRow("Most rows") { Text("\(model.settings.maxResults)") }
             }
-            Toggle(isOn: binding(\.dimUnused)) {
-                Text("Dim apps not opened lately")
-                Text("The apps and panes you use stand out.")
-            }
+            DescribedToggle(
+                "Dim apps not opened lately", detail: "The apps and panes you use stand out.",
+                isOn: binding(\.dimUnused))
             Stepper(
                 value: binding(\.dimAfterDays), in: Search.Settings.dimAfterDaysRange
             ) {
@@ -124,7 +122,7 @@ struct SettingsView: View {
     }
 
     private var folders: some View {
-        Section("App folders") {
+        SettingsSection("App folders") {
             ForEach(model.settings.appFolders, id: \.self) { folder in
                 removableRow(folder) { $0.appFolders.removeAll { $0 == folder } }
             }
@@ -133,13 +131,11 @@ struct SettingsView: View {
     }
 
     private var excluded: some View {
-        Section {
+        SettingsSection("Left out of results") {
             ForEach(model.settings.excludedApps, id: \.self) { id in
                 removableRow(id) { $0.excludedApps.removeAll { $0 == id } }
             }
             Button("Add App…", action: addApps)
-        } header: {
-            Text("Left out of results")
         } footer: {
             Text("By bundle ID. Panes and other IDs can be added in \(ConfigFile.name).")
                 .foregroundStyle(.secondary)
@@ -147,7 +143,7 @@ struct SettingsView: View {
     }
 
     private var file: some View {
-        Section {
+        SettingsSection {
             LabeledRow("Config file") {
                 Text(
                     (model.configFile.path as NSString)
@@ -320,9 +316,92 @@ private struct SettingsForm<Content: View>: View {
                 .formStyle(.grouped)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) { content }
+                VStack(alignment: .leading, spacing: 24) { content }
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+/// A section of the settings form. On macOS 12 the sections aren't in a `Form`, which would
+/// style their titles and footers, so there the title is a heading, the footer is callout
+/// text, and the rows stack beneath.
+private struct SettingsSection<Content: View, Footer: View>: View {
+    let title: String?
+    @ViewBuilder let content: Content
+    @ViewBuilder let footer: Footer
+
+    init(
+        _ title: String? = nil, @ViewBuilder content: () -> Content,
+        @ViewBuilder footer: () -> Footer
+    ) {
+        self.title = title
+        self.content = content()
+        self.footer = footer()
+    }
+
+    init(_ title: String? = nil, @ViewBuilder content: () -> Content)
+    where Footer == EmptyView {
+        self.init(title, content: content, footer: { EmptyView() })
+    }
+
+    var body: some View {
+        if #available(macOS 13, *) {
+            if let title {
+                Section {
+                    content
+                } header: {
+                    Text(title)
+                } footer: {
+                    footer
+                }
+            } else {
+                Section {
+                    content
+                } footer: {
+                    footer
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                if let title {
+                    Text(title).font(.headline)
+                }
+                content
+                footer.font(.callout)
+            }
+        }
+    }
+}
+
+/// A toggle with a line under its title saying what it does. A grouped form shows a toggle's
+/// second label text that way; macOS 12 runs the two together on one line, so there the line
+/// sits under the checkbox, lined up with the title.
+private struct DescribedToggle: View {
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+
+    init(_ title: String, detail: String, isOn: Binding<Bool>) {
+        self.title = title
+        self.detail = detail
+        _isOn = isOn
+    }
+
+    var body: some View {
+        if #available(macOS 13, *) {
+            Toggle(isOn: $isOn) {
+                Text(title)
+                Text(detail)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                Toggle(title, isOn: $isOn)
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 20)
             }
         }
     }
