@@ -1371,7 +1371,7 @@ extension Fixture {
     #expect(fixture.titles == ["Safari"])
 }
 
-@MainActor @Test func shiftTabGoesUpALevelClearingTheQuery() throws {
+@MainActor @Test func shiftTabGoesUpALevel() throws {
     let fixture = Fixture.withGroups()
     try fixture.enter("denon")
     try fixture.enter("zones")
@@ -1379,11 +1379,15 @@ extension Fixture {
     #expect(fixture.titles == ["Zone Two"])
 
     try fixture.shiftTab()
-    #expect(fixture.controller.query.isEmpty)
-    #expect(fixture.titles == ["TV", "Game", "Zones"])
+    #expect(fixture.controller.query == "zones")
+    #expect(fixture.titles == ["Zones"])
 
     try fixture.shiftTab()
-    #expect(fixture.titles.isEmpty)
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles == ["Denon"])
+
+    // Gone up to the top, clear it to start the next query afresh.
+    try fixture.type("")
 
     // At the top level it does nothing.
     try fixture.type("saf")
@@ -1400,8 +1404,8 @@ extension Fixture {
 
     try fixture.left()
 
-    #expect(fixture.controller.query.isEmpty)
-    #expect(fixture.titles.isEmpty)
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles == ["Denon"])
     #expect(fixture.controller.isShown)
 }
 
@@ -1432,7 +1436,8 @@ extension Fixture {
     #expect(fixture.titles == ["TV", "Game", "Zones"])
 
     try fixture.backspace()
-    #expect(fixture.titles.isEmpty)
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles == ["Denon"])
     #expect(fixture.controller.isShown)
 }
 
@@ -1446,22 +1451,28 @@ extension Fixture {
     #expect(fixture.controller.query.isEmpty)
     #expect(fixture.titles == ["Zone Two"])
 
+    // Each level's restored query is cleared before the next press goes up.
     try fixture.esc()
-    #expect(fixture.titles == ["TV", "Game", "Zones"])
+    #expect(fixture.controller.query == "zones")
+    #expect(fixture.titles == ["Zones"])
+    try fixture.esc()
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.controller.path.count == 1)
 
     try fixture.esc()
-    #expect(fixture.titles.isEmpty)
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles == ["Denon"])
+    try fixture.esc()
+    #expect(fixture.controller.query.isEmpty)
     #expect(fixture.controller.isShown)
 
     try fixture.esc()
     #expect(!fixture.controller.isShown)
 }
 
-@MainActor @Test func hidingGoesBackToTheTopLevelKeepingTheQuery() throws {
+@MainActor @Test func hidingAtTheTopLevelKeepsTheQuery() throws {
     let fixture = Fixture.withGroups()
-    try fixture.enter("denon")
     try fixture.type("saf")
-    #expect(fixture.titles.isEmpty)
 
     fixture.controller.hide()
     fixture.controller.show()
@@ -1499,19 +1510,34 @@ extension Fixture {
     #expect(Set(fixture.titles) == ["TV", "Tuner"])
 }
 
-@MainActor @Test func aRebuildThatRemovesTheOpenGroupGoesToTheTopLevel() throws {
+@MainActor @Test func aRebuildThatRemovesTheInnerGroupLandsInTheOuterOneWithItsQuery() throws {
     let fixture = Fixture.withGroups()
     try fixture.enter("denon")
-    try fixture.enter("zones")
+    try fixture.enter("zon")
     try fixture.type("t")
+    let zonal = script("Denon/zonal.sh", "Zonal")
 
     fixture.controller.replaceIndex(
-        SearchIndex(items: [safari, denon]), groups: [denon.id: [tv, game]])
+        SearchIndex(items: [safari, denon]), groups: [denon.id: [tv, game, zonal]])
 
-    #expect(fixture.controller.query.isEmpty)
-    #expect(fixture.titles.isEmpty)
-    try fixture.type("saf")
-    #expect(fixture.titles == ["Safari"])
+    #expect(fixture.controller.path.map(\.row.title) == ["Denon"])
+    #expect(fixture.controller.query == "zon")
+    #expect(fixture.titles == ["Zonal"])
+    #expect(fixture.breadcrumbs == ["Denon ›"])
+}
+
+@MainActor @Test func aRebuildThatKeepsTheGroupsStillRemembersWhereToGoUp() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("denon")
+    try fixture.right()
+    let tuner = script("Denon/tuner.sh", "Tuner")
+
+    fixture.controller.replaceIndex(
+        SearchIndex(items: [safari, denon]), groups: [denon.id: [tv, game, tuner]])
+    try fixture.left()
+
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles == ["Denon"])
 }
 
 @MainActor @Test func aRebuildThatRemovesATopLevelOpenGroupGoesToTheTopLevel() throws {
@@ -1522,7 +1548,8 @@ extension Fixture {
     fixture.controller.replaceIndex(SearchIndex(items: [safari]), groups: [:])
 
     #expect(fixture.controller.path.isEmpty)
-    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles.isEmpty)
     try fixture.type("saf")
     #expect(fixture.titles == ["Safari"])
 }
@@ -1644,8 +1671,93 @@ extension Fixture {
     fixture.controller.panel.breadcrumb.performClick(nil)
 
     #expect(fixture.controller.path.map(\.row.title) == ["Denon"])
-    #expect(fixture.titles == ["TV", "Game", "Zones"])
+    #expect(fixture.titles == ["Zones"])
     #expect(fixture.controller.isShown)
+}
+
+extension Array {
+    fileprivate subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
+    }
+}
+
+extension Fixture {
+    /// A fixture whose top level has a second group, "Denon Two", ahead of Denon in the rows
+    /// for "denon", so that the selected row isn't the first.
+    static func withTwoMatches() -> Fixture {
+        let other = group("Other", "Denon Other")
+        let groups = denonGroups.merging([other.id: [script("Other/x.sh", "X")]]) { $1 }
+        return Fixture(items: [safari, other, denon], groups: groups)
+    }
+
+    /// Moves the selection down until the row titled `title` is selected.
+    func select(_ title: String) throws {
+        for _ in 0..<titles.count where titles[safe: selection] != title { try down() }
+        #expect(titles[safe: selection] == title)
+    }
+}
+
+/// Every way of going up puts back the query and the group's row, with the caret at the end.
+@MainActor @Test func goingUpRestoresTheQueryAndSelectsTheGroupRow() throws {
+    let ways: [(String, (Fixture) throws -> Void)] = [
+        ("left", { try $0.left() }),
+        ("backspace", { try $0.backspace() }),
+        ("shift-tab", { try $0.shiftTab() }),
+        ("esc", { try $0.esc() }),
+        ("breadcrumb", { $0.controller.panel.breadcrumb.performClick(nil) }),
+    ]
+    for (name, goUp) in ways {
+        let fixture = Fixture.withTwoMatches()
+        try fixture.type("denon")
+        try fixture.select("Denon")
+        try fixture.right()
+        #expect(fixture.controller.query.isEmpty, "\(name)")
+
+        try goUp(fixture)
+
+        #expect(fixture.controller.query == "denon", "\(name)")
+        #expect(try fixture.caret == NSRange(location: 5, length: 0), "\(name)")
+        #expect(fixture.titles[safe: fixture.selection] == "Denon", "\(name)")
+        #expect(fixture.controller.path.isEmpty, "\(name)")
+    }
+}
+
+@MainActor @Test func goingUpFromANestedGroupRestoresEachLevel() throws {
+    let fixture = Fixture.withTwoMatches()
+    try fixture.type("denon")
+    try fixture.select("Denon")
+    try fixture.right()
+    try fixture.type("o")
+    try fixture.select("Zones")
+    try fixture.right()
+    try fixture.type("two")
+
+    try fixture.shiftTab()
+    #expect(fixture.controller.path.map(\.row.title) == ["Denon"])
+    #expect(fixture.controller.query == "o")
+    #expect(fixture.titles[safe: fixture.selection] == "Zones")
+
+    try fixture.shiftTab()
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles[safe: fixture.selection] == "Denon")
+}
+
+@MainActor @Test func hidingInsideANestedGroupGoesUpToTheTopLevelLikeLeavingEachLevel() throws {
+    let fixture = Fixture.withTwoMatches()
+    fixture.show(on: [tall, otherTall])
+    try fixture.type("denon")
+    try fixture.select("Denon")
+    try fixture.right()
+    try fixture.type("o")
+    try fixture.select("Zones")
+    try fixture.right()
+
+    fixture.controller.hide()
+    fixture.show(on: [tall, otherTall])
+
+    #expect(fixture.controller.path.isEmpty)
+    #expect(fixture.shown.map(\.field.stringValue) == ["denon", "denon"])
+    #expect(fixture.titles[safe: fixture.selection] == "Denon")
 }
 
 @MainActor @Test func aRebuildThatRemovesTheOpenGroupHidesTheBreadcrumb() throws {
@@ -1673,6 +1785,7 @@ extension Fixture {
     #expect(fixture.announcements.count == announced + 1)
     #expect(fixture.announcements.last == "Denon")
 
+    try fixture.esc()
     try fixture.esc()
     #expect(fixture.announcements.last == "Search")
 }

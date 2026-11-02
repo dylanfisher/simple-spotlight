@@ -94,10 +94,12 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// Speaks to VoiceOver: the results after each search, the row selected after each move,
     /// the group entered or the level gone up to.
     var announce: @MainActor (String) -> Void = SearchPanelController.postAnnouncement
-    /// A group opened: the row it was opened from, and its rows, searched in place of `index`.
+    /// A group opened: the row it was opened from, its rows, searched in place of `index`, and
+    /// the query the level it was opened from showed, which going up puts back.
     struct OpenGroup {
         let row: SearchItem
         let index: SearchIndex
+        let parentQuery: String
     }
 
     /// A panel with its rows, and the visible area of the screen it last showed on, where its
@@ -346,11 +348,15 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         if settings.showOnAllDisplays { schedulePrepare() }
     }
 
-    /// Hides every panel, keeping the query for the next show, which starts at the top level.
+    /// Hides every panel, keeping the query for the next show. Inside a group it first goes up
+    /// to the top level as leaving each group would, so the next show starts there.
     public func hide() {
         guard isShown else { return }
+        if let outermost = path.first {
+            path = []
+            restore(from: outermost)
+        }
         isShown = false
-        path = []
         let shown = shownPanels
         shownCount = 0
         for panel in shown { panel.showGear(false) }
@@ -390,7 +396,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// Searches `index` at the top level and `groups` inside a group from now on, and again now,
     /// keeping the query and the selected item. The groups open stay open while they are all
-    /// still there; otherwise the panel goes to the top level, clearing the query. Every group
+    /// still there; otherwise the panel goes up to the deepest level that is, with that level's
+    /// query put back. Every group
     /// row in `index` and in `groups` must have an entry in `groups`; one without is a
     /// programming error, so this stops.
     public func replaceIndex(_ index: SearchIndex, groups: [String: [SearchItem]]) {
@@ -401,8 +408,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         search(keepingSelection: true)
     }
 
-    /// Opens the groups in `path` again from `index` and `groups`, or goes to the top level when
-    /// one of them is gone. Each group's row is looked up where it was opened from, so a changed
+    /// Opens the groups in `path` again from `index` and `groups`. When one is gone, goes up to
+    /// the level above the first that is, as leaving it would. Each group's row is looked up where it was opened from, so a changed
     /// title shows.
     private func reopenPath() {
         guard !path.isEmpty else { return }
@@ -412,11 +419,13 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             guard let row = rows.first(where: { $0.id == open.row.id }),
                 let id = row.groupID, let children = groups[id]
             else {
-                path = []
-                panel.field.stringValue = ""
+                path = reopened
+                restore(from: open)
                 return
             }
-            reopened.append(OpenGroup(row: row, index: Self.groupIndex(children)))
+            reopened.append(
+                OpenGroup(
+                    row: row, index: Self.groupIndex(children), parentQuery: open.parentQuery))
             rows = children
         }
         path = reopened
@@ -441,23 +450,31 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// the group has rows.
     private func openGroup(_ row: SearchItem, id: String) {
         let rows = groups[id]!
-        path.append(OpenGroup(row: row, index: Self.groupIndex(rows)))
+        path.append(OpenGroup(row: row, index: Self.groupIndex(rows), parentQuery: query))
         panel.field.stringValue = ""
         search(announcing: false)
         announce("\(row.title), \(Self.commandCount(rows.count))")
     }
 
-    /// Goes up from the innermost group open to its parent, or the top level, with an empty
-    /// query, and says where the panel is now: the parent's title, or at the top level the
-    /// field's name. Returns false, changing nothing, at the top level.
+    /// Goes up from the innermost group open to its parent, or the top level, with the query
+    /// and the selected row it had when the group was opened, and says where the panel is now:
+    /// the parent's title, or at the top level the field's name. Returns false, changing
+    /// nothing, at the top level.
     @discardableResult
     private func leaveGroup() -> Bool {
-        guard !path.isEmpty else { return false }
-        path.removeLast()
-        panel.field.stringValue = ""
-        search(announcing: false)
+        guard let left = path.popLast() else { return false }
+        restore(from: left)
         announce(path.last?.row.title ?? SearchPanel.searchLabel)
         return true
+    }
+
+    /// Puts back the level `left` was opened from, which is now the innermost: its query with
+    /// the caret at the end, and the row `left` was opened from selected, if it is still there.
+    private func restore(from left: OpenGroup) {
+        panel.field.stringValue = left.parentQuery
+        panel.field.currentEditor()?.selectedRange = NSRange(
+            location: left.parentQuery.utf16.count, length: 0)
+        search(selecting: left.row.id, announcing: false)
     }
 
     /// "1 command" or "4 commands": how many rows a group has, a nested group's row counting
@@ -468,14 +485,16 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// Fills the rows for the query: the leading items, the calculator's row, then the index's
     /// best matches, `maxResults` in all; inside a group, only the group's best matches. The
-    /// first row is selected, or with `keepingSelection` the row of the item selected before, if
-    /// it is still there. Does nothing while the panel is hidden: showing searches, and a search
+    /// first row is selected, or with `keepingSelection` the row of the item selected before, or
+    /// with `selecting` the row of the item with that id, if it is still there. Does nothing while the panel is hidden: showing searches, and a search
     /// no one sees would still be announced. Moving the keys searches again without
     /// `announcing`, as VoiceOver has said the results.
-    private func search(keepingSelection: Bool = false, announcing: Bool = true) {
+    private func search(
+        keepingSelection: Bool = false, selecting id: String? = nil, announcing: Bool = true
+    ) {
         guard isShown else { return }
         let query = query
-        let kept = keepingSelection ? selectedRow?.item.id : nil
+        let kept = id ?? (keepingSelection ? selectedRow?.item.id : nil)
         var rows: [SearchState.Row] = []
         let searched: SearchIndex
         if let group = path.last {
