@@ -57,7 +57,9 @@ mkdir -p "$iconset" "$app/Contents/Resources"
 for size in 16 32 128 256 512; do
   for scale in 1 2; do
     px=$((size * scale))
-    name="icon_${size}x${size}$([ "$scale" = 2 ] && echo @2x).png"
+    suffix=""
+    if [ "$scale" = 2 ]; then suffix=@2x; fi
+    name="icon_${size}x${size}${suffix}.png"
     sips -s format png -z "$px" "$px" Sources/SimpleSpotlight/AppIcon.svg --out "$iconset/$name" >/dev/null
     if [ ! -s "$iconset/$name" ]; then
       printf 'sips wrote no %s from AppIcon.svg; it renders SVG only on macOS 13 and later.\n' "$name" >&2
