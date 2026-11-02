@@ -47,7 +47,7 @@ public enum ProblemItems {
         if problems.count == 1 {
             title = "Couldn't search \(URL(filePath: first.path).lastPathComponent)"
         } else {
-            title = "Couldn't search \(problems.count) folders or apps"
+            title = "Couldn't search \(problems.count) folders, apps or scripts"
             subtitle += " · Return copies all \(problems.count)"
         }
         return row(

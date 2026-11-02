@@ -113,11 +113,12 @@ extension Settings {
             "The most rows the panel shows.")
         static let dimUnused = Key(
             \.dimUnused, "dimUnused", .bool, default: true,
-            "Draw the apps and panes you haven't opened lately fainter, so the ones you use stand out."
+            "Draw the apps, panes and scripts you haven't opened lately fainter, so the ones you use stand out."
         )
         static let dimAfterDays = Key(
             \.dimAfterDays, "dimAfterDays", .integer(dimAfterDaysRange), default: 30,
-            "With dimUnused, how many days after you last opened an app or pane its row dims.")
+            "With dimUnused, how many days after you last opened an app, pane or script its row dims."
+        )
         static let showOnAllDisplays = Key(
             \.showOnAllDisplays, "showOnAllDisplays", .bool, default: false,
             "Show the panel on every display at once, typing in the one you're working on.")

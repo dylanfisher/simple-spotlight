@@ -106,7 +106,7 @@ struct SettingsView: View {
             }
             Toggle(isOn: binding(\.dimUnused)) {
                 Text("Dim apps not opened lately")
-                Text("The apps and panes you use stand out.")
+                Text("The apps, panes and scripts you use stand out.")
             }
             Stepper(
                 value: binding(\.dimAfterDays), in: Search.Settings.dimAfterDaysRange
