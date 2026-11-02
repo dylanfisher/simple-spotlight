@@ -1609,3 +1609,70 @@ extension Fixture {
         fixture.shown.map(\.frame.height) == Array(repeating: SearchPanel.height(rows: 3), count: 2)
     )
 }
+
+extension Fixture {
+    /// The breadcrumb of each panel showing: its text, or nil while it is hidden.
+    var breadcrumbs: [String?] {
+        shown.map { $0.breadcrumb.isHidden ? nil : $0.breadcrumb.title }
+    }
+}
+
+@MainActor @Test func everyPanelsBreadcrumbShowsTheGroupsOpen() throws {
+    let fixture = Fixture.withGroups()
+    fixture.show(on: [tall, otherTall])
+    #expect(fixture.breadcrumbs == [nil, nil])
+
+    try fixture.enter("denon")
+    #expect(fixture.breadcrumbs == ["Denon ›", "Denon ›"])
+
+    try fixture.enter("zones")
+    #expect(fixture.breadcrumbs == ["Denon › Zones ›", "Denon › Zones ›"])
+
+    try fixture.shiftTab()
+    #expect(fixture.breadcrumbs == ["Denon ›", "Denon ›"])
+
+    fixture.controller.hide()
+    fixture.show(on: [tall, otherTall])
+    #expect(fixture.breadcrumbs == [nil, nil])
+}
+
+@MainActor @Test func aClickOnTheBreadcrumbGoesUpALevel() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.enter("zones")
+
+    fixture.controller.panel.breadcrumb.performClick(nil)
+
+    #expect(fixture.controller.path.map(\.row.title) == ["Denon"])
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+    #expect(fixture.controller.isShown)
+}
+
+@MainActor @Test func aRebuildThatRemovesTheOpenGroupHidesTheBreadcrumb() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+
+    fixture.controller.replaceIndex(SearchIndex(items: [safari]), groups: [:])
+
+    #expect(fixture.breadcrumbs == [nil])
+}
+
+/// Entering says the group and how many rows it has, in place of the first row; going up says
+/// where the panel is now, the top level being the field's own name.
+@MainActor @Test func enteringAndLeavingAGroupSaySoToVoiceOver() throws {
+    let fixture = Fixture.withGroups()
+
+    try fixture.enter("denon")
+    #expect(fixture.announcements.last == "Denon, 3 commands")
+
+    try fixture.enter("zones")
+    #expect(fixture.announcements.last == "Zones, 1 command")
+
+    let announced = fixture.announcements.count
+    try fixture.backspace()
+    #expect(fixture.announcements.count == announced + 1)
+    #expect(fixture.announcements.last == "Denon")
+
+    try fixture.esc()
+    #expect(fixture.announcements.last == "Search")
+}

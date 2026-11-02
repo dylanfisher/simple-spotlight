@@ -14,7 +14,19 @@ final class SearchPanel: NSPanel {
     var willTakeKeys: @MainActor (SearchPanel) -> Void = { _ in }
     /// Runs when the gear is clicked.
     var openSettings: @MainActor () -> Void = {}
+    /// Runs when the breadcrumb is clicked.
+    var goUp: @MainActor () -> Void = {}
     let field = SearchField()
+    /// The groups open, left of the field, hidden at the top level. A click goes up a level.
+    let breadcrumb: NSButton = {
+        let button = BreadcrumbButton(title: "", target: nil, action: nil)
+        button.isBordered = false
+        button.toolTip = "Go up a level (⇧⇥)"
+        // The field keeps the keys when the breadcrumb is clicked.
+        button.refusesFirstResponder = true
+        button.isHidden = true
+        return button
+    }()
     /// The way into Settings with the mouse, at the right end of the field. It shows only while
     /// Option is held, so the field is the panel's only control the rest of the time.
     let gear: NSButton = {
@@ -47,9 +59,16 @@ final class SearchPanel: NSPanel {
     /// The space either side of the field's contents: left of the magnifier, right of the text.
     private static let sideMargin: CGFloat = 18
     private static let magnifierSize: CGFloat = 24
-    /// The space between the magnifier and the text, and between the text and the gear.
+    /// The space between the magnifier and the text, the breadcrumb and the text, and the text
+    /// and the gear.
     private static let magnifierGap: CGFloat = 10
     private static let fieldLineHeight: CGFloat = 30
+    private static let breadcrumbHeight: CGFloat = 26
+    /// The space either side of the breadcrumb's text, inside its fill.
+    private static let breadcrumbPadding: CGFloat = 8
+    /// The widest the breadcrumb gets, so a deep path leaves the field room to type in.
+    private static let breadcrumbMaxWidth: CGFloat = 240
+    private static let breadcrumbFont = NSFont.systemFont(ofSize: 15, weight: .medium)
 
     /// The panel's height with `rows` rows under the field: the field alone with none.
     static func height(rows: Int) -> CGFloat {
@@ -115,8 +134,12 @@ final class SearchPanel: NSPanel {
         self.rows = rows
         gear.target = self
         gear.action = #selector(gearClicked)
+        breadcrumb.target = self
+        breadcrumb.action = #selector(breadcrumbClicked)
 
-        for view in [magnifier, field, gear, separator, rows] { background.addSubview(view) }
+        for view in [magnifier, breadcrumb, field, gear, separator, rows] {
+            background.addSubview(view)
+        }
         contentView = Self.makeContent(holding: background, bounds: bounds)
         initialFirstResponder = field
         layoutContent()
@@ -131,6 +154,32 @@ final class SearchPanel: NSPanel {
 
     @objc private func gearClicked() {
         openSettings()
+    }
+
+    /// Shows the titles of the groups open, outermost first, in the breadcrumb, `A › B ›`, the
+    /// field moving right to make room; hides it, the field taking the room back, when there are
+    /// none.
+    func showPath(_ titles: [String]) {
+        let text = titles.isEmpty ? "" : titles.map { "\($0) ›" }.joined(separator: " ")
+        guard text != breadcrumb.title || breadcrumb.isHidden != titles.isEmpty else { return }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        // The start goes first, so the group open now still shows.
+        paragraph.lineBreakMode = .byTruncatingHead
+        breadcrumb.attributedTitle = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: Self.breadcrumbFont, .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph,
+            ])
+        // The cell is the element VoiceOver reads; it would read each › as a quotation mark.
+        breadcrumb.cell?.setAccessibilityLabel(titles.joined(separator: ", "))
+        breadcrumb.isHidden = titles.isEmpty
+        layoutContent()
+    }
+
+    @objc private func breadcrumbClicked() {
+        goUp()
     }
 
     /// Sets the height for `rows` rows, keeping the top edge where it is.
@@ -163,7 +212,15 @@ final class SearchPanel: NSPanel {
         magnifier.frame = NSRect(
             x: Self.sideMargin, y: fieldTop + (Self.fieldHeight - symbol) / 2, width: symbol,
             height: symbol)
-        let textLeft = Self.sideMargin + symbol + Self.magnifierGap
+        var textLeft = Self.sideMargin + symbol + Self.magnifierGap
+        if !breadcrumb.isHidden {
+            let textWidth = breadcrumb.attributedTitle.size().width.rounded(.up)
+            let width = min(textWidth + 2 * Self.breadcrumbPadding, Self.breadcrumbMaxWidth)
+            breadcrumb.frame = NSRect(
+                x: textLeft, y: fieldTop + (Self.fieldHeight - Self.breadcrumbHeight) / 2,
+                width: width, height: Self.breadcrumbHeight)
+            textLeft = breadcrumb.frame.maxX + Self.magnifierGap
+        }
         gear.frame = NSRect(
             x: Self.width - Self.sideMargin - symbol,
             y: fieldTop + (Self.fieldHeight - symbol) / 2, width: symbol, height: symbol)
@@ -267,6 +324,19 @@ private final class EdgeView: NSView {
     static let color = NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         return NSColor(white: 1, alpha: isDark ? 0.2 : 0.6)
+    }
+}
+
+/// The breadcrumb: its title over a rounded fill. A click in another display's panel goes up
+/// as it takes the keys, as one in its field places the caret.
+@MainActor
+private final class BreadcrumbButton: NSButton {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        ResultRow.selectionFill.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+        super.draw(dirtyRect)
     }
 }
 

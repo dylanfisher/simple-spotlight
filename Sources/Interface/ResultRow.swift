@@ -3,7 +3,8 @@ import Search
 import SwiftUI
 
 /// One result: its icon, its title with the matched characters bold, and its subtitle; for the
-/// calculator, its answer over its expression.
+/// calculator, its answer over its expression. A group's row ends in a chevron, as it opens in
+/// the panel.
 struct ResultRow: View {
     /// What a row's icon shows.
     enum Icon: Equatable {
@@ -34,6 +35,11 @@ struct ResultRow: View {
                 text
             }
             Spacer(minLength: 0)
+            if Self.showsChevron(for: row.item) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .opacity(
             Self.contentOpacity(
@@ -162,6 +168,11 @@ struct ResultRow: View {
             }
             return .file(url.path(percentEncoded: false))
         }
+    }
+
+    /// Whether `item`'s row ends in a chevron: only a group's, which opens in the panel.
+    nonisolated static func showsChevron(for item: SearchItem) -> Bool {
+        item.kind == .group
     }
 
     /// `title` with the characters in `bold` strongly emphasized, which `Text` draws bold.

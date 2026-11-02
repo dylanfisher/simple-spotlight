@@ -65,8 +65,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         }
     }
     public private(set) var isShown = false
-    /// The groups opened, outermost first; empty at the top level.
-    private(set) var path: [OpenGroup] = []
+    /// The groups opened, outermost first; empty at the top level. Every panel's breadcrumb
+    /// shows their titles.
+    private(set) var path: [OpenGroup] = [] {
+        didSet {
+            let titles = path.map(\.row.title)
+            for slot in slots { slot.panel.showPath(titles) }
+        }
+    }
     /// The text in the field, kept while the panel is hidden.
     public var query: String { panel.field.stringValue }
 
@@ -85,7 +91,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     var rowsViews: [ResultListHostingView] { slots.map(\.rows) }
     let state = SearchState()
     let icons: IconCache
-    /// Speaks to VoiceOver: the results after each search, the row selected after each move.
+    /// Speaks to VoiceOver: the results after each search, the row selected after each move,
+    /// the group entered or the level gone up to.
     var announce: @MainActor (String) -> Void = SearchPanelController.postAnnouncement
     /// A group opened: the row it was opened from, and its rows, searched in place of `index`.
     struct OpenGroup {
@@ -200,6 +207,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         panel.keyEquivalent = { [weak self] in self?.keyEquivalent($0) ?? false }
         panel.willTakeKeys = { [weak self] in self?.takeKeys(in: $0) }
         panel.openSettings = { [weak self] in self?.showSettings() }
+        panel.goUp = { [weak self] in self?.leaveGroup() }
+        panel.showPath(path.map(\.row.title))
         return Slot(panel: panel, rows: rows)
     }
 
@@ -427,24 +436,34 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         SearchIndex(items: rows, listsAllForEmptyQuery: true)
     }
 
-    /// Searches the rows of the group `row` opens, with an empty query. `replaceIndex` has
-    /// checked that the group has rows.
+    /// Searches the rows of the group `row` opens, with an empty query, and says the group's
+    /// title and how many rows it has, "Living Room, 4 commands". `replaceIndex` has checked that
+    /// the group has rows.
     private func openGroup(_ row: SearchItem, id: String) {
         let rows = groups[id]!
         path.append(OpenGroup(row: row, index: Self.groupIndex(rows)))
         panel.field.stringValue = ""
-        search()
+        search(announcing: false)
+        announce("\(row.title), \(Self.commandCount(rows.count))")
     }
 
     /// Goes up from the innermost group open to its parent, or the top level, with an empty
-    /// query. Returns false, changing nothing, at the top level.
+    /// query, and says where the panel is now: the parent's title, or at the top level the
+    /// field's name. Returns false, changing nothing, at the top level.
     @discardableResult
     private func leaveGroup() -> Bool {
         guard !path.isEmpty else { return false }
         path.removeLast()
         panel.field.stringValue = ""
-        search()
+        search(announcing: false)
+        announce(path.last?.row.title ?? SearchPanel.searchLabel)
         return true
+    }
+
+    /// "1 command" or "4 commands": how many rows a group has, a nested group's row counting
+    /// as one.
+    private nonisolated static func commandCount(_ count: Int) -> String {
+        count == 1 ? "1 command" : "\(count) commands"
     }
 
     /// Fills the rows for the query: the leading items, the calculator's row, then the index's
