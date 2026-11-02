@@ -12,8 +12,9 @@ public struct ScriptCommandProvider: Sendable {
 
     /// One row per executable file, sorted by file name. Dotfiles and files whose names start
     /// with `_` are skipped. A missing folder gives nothing and no problem, since having the
-    /// folder is how the feature is turned on. A file that isn't executable, or whose header
-    /// can't be read, is left out and reported as a problem. Throws when cancelled.
+    /// folder is how the feature is turned on. A file that isn't executable, whose header
+    /// can't be read, or that isn't a regular file (links are followed) is left out and reported
+    /// as a problem. Throws when cancelled.
     ///
     /// It blocks on the disk; callers go through `IndexBuilder.build()`, which runs it off the
     /// caller's actor.
@@ -31,11 +32,11 @@ public struct ScriptCommandProvider: Sendable {
         for name in names.sorted() where !name.hasPrefix(".") && !name.hasPrefix("_") {
             if Task.isCancelled { throw CancellationError() }
             let url = folder.appendingPathComponent(name)
-            var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-                !isDirectory.boolValue
-            else { continue }
             do {
+                switch try Self.kind(of: url) {
+                case .directory: continue
+                case .regularFile: break
+                }
                 let header = try Self.header(of: url)
                 if header.errors.isEmpty {
                     items.append(Self.item(url, name: name, header: header))
@@ -51,6 +52,30 @@ public struct ScriptCommandProvider: Sendable {
         return (items, problems)
     }
 
+    private enum Kind { case directory, regularFile }
+
+    /// What `url` is once links are followed. `stat` does the following; the keys of
+    /// `URLResourceValues` on a link describe the link itself. Throws a problem for a link to
+    /// nothing and for anything else that isn't a file or folder, such as a named pipe, which
+    /// blocks the reader that opens it.
+    private static func kind(of url: URL) throws -> Kind {
+        var info = stat()
+        if stat(url.path, &info) != 0 {
+            let code = errno
+            let isLink =
+                (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
+            throw IndexProblem(
+                path: url.path,
+                reason: code == ENOENT && isLink
+                    ? "It's a link that points at nothing." : String(cString: strerror(code)) + ".")
+        }
+        switch info.st_mode & S_IFMT {
+        case S_IFDIR: return .directory
+        case S_IFREG: return .regularFile
+        default: throw IndexProblem(path: url.path, reason: "It isn't a regular file.")
+        }
+    }
+
     private static func item(_ url: URL, name: String, header: ScriptHeader) -> SearchItem {
         SearchItem(
             id: SearchItem.builtInID("commands/\(name)"), kind: .script, title: header.title,
@@ -64,7 +89,13 @@ public struct ScriptCommandProvider: Sendable {
             throw IndexProblem(path: url.path, reason: "It isn't executable; run chmod +x on it.")
         }
         let handle = try FileHandle(forReadingFrom: url)
-        let data = try handle.read(upToCount: ScriptHeader.readLimit + 1) ?? Data()
+        let data: Data
+        do {
+            data = try handle.read(upToCount: ScriptHeader.readLimit + 1) ?? Data()
+        } catch {
+            try? handle.close()
+            throw error
+        }
         try handle.close()
         return ScriptHeader.parse([UInt8](data), fileName: url.lastPathComponent)
     }

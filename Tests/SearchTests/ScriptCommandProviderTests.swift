@@ -72,3 +72,64 @@ func makeScript(
     #expect(found.items.isEmpty)
     #expect(found.problems.isEmpty)
 }
+
+/// Holds the result of a scan run on another thread. The semaphore orders the write before the
+/// read, so the unchecked conformance is safe.
+private final class ScanResult: @unchecked Sendable {
+    let done = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var value: (items: [SearchItem], problems: [IndexProblem])?
+}
+
+/// Opening a named pipe for reading blocks until a writer appears, so a scan that opens one
+/// hangs. The scan runs on a background thread and the test waits on a semaphore for at most
+/// 10 seconds; on timeout it opens the pipe for writing, which releases the blocked reader so
+/// the thread doesn't outlive the test.
+@Test func reportsAnExecutableNamedPipeWithoutOpeningIt() throws {
+    let folder = try TempFolder()
+    try makeScript("tv.sh", in: folder.url)
+    let pipe = folder.url.appendingPathComponent("pipe.sh")
+    try #require(mkfifo(pipe.path, 0o755) == 0)
+    let result = ScanResult()
+    let provider = ScriptCommandProvider(folder: folder.url)
+    DispatchQueue.global().async {
+        result.value = try? provider.items()
+        result.done.signal()
+    }
+    let finished = result.done.wait(timeout: .now() + 10) == .success
+    if !finished {
+        let release = open(pipe.path, O_WRONLY | O_NONBLOCK)
+        if release >= 0 { close(release) }
+    }
+    try #require(finished, "The scan blocked opening the pipe.")
+    let found = try #require(result.value)
+    #expect(found.items.map(\.title) == ["tv"])
+    #expect(
+        found.problems == [IndexProblem(path: pipe.path, reason: "It isn't a regular file.")])
+}
+
+@Test func followsASymlinkToAScriptAndSkipsOneToAFolder() throws {
+    let folder = try TempFolder()
+    let real = try makeScript("real.sh", in: folder.url)
+    let group = folder.url.appendingPathComponent("group")
+    try FileManager.default.createDirectory(at: group, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+        at: folder.url.appendingPathComponent("alias.sh"), withDestinationURL: real)
+    try FileManager.default.createSymbolicLink(
+        at: folder.url.appendingPathComponent("linked-group"), withDestinationURL: group)
+    let found = try ScriptCommandProvider(folder: folder.url).items()
+    #expect(found.items.map(\.title) == ["alias", "real"])
+    #expect(found.problems.isEmpty)
+}
+
+@Test func reportsASymlinkThatPointsAtNothing() throws {
+    let folder = try TempFolder()
+    let link = folder.url.appendingPathComponent("gone.sh")
+    try FileManager.default.createSymbolicLink(
+        at: link, withDestinationURL: folder.url.appendingPathComponent("missing.sh"))
+    let found = try ScriptCommandProvider(folder: folder.url).items()
+    #expect(found.items.isEmpty)
+    #expect(
+        found.problems == [
+            IndexProblem(path: link.path, reason: "It's a link that points at nothing.")
+        ])
+}
