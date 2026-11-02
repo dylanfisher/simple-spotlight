@@ -93,8 +93,8 @@ output is dropped. If it exits with an error, a notice shows the exit code and t
 stderr, which is why the example says what went wrong there. After 10 seconds it is stopped and
 you are told.
 
-In the panel, Tab, or Return on a group row, opens the group, and → does too when the cursor is
-at the end of the query. Shift-Tab goes up a level, as do ← at the start of the query and
+In the panel, Tab or Return on a group row opens the group, and so does → when the cursor is at
+the end of the query. Shift-Tab goes up a level, as do ← at the start of the query and
 Backspace on an empty one. Esc clears the query, then goes up a level, then hides the panel. The
 groups you are in show at the left of the field, and clicking them goes up a level. Hiding the
 panel returns to the top level and keeps what you typed.
