@@ -18,7 +18,7 @@ let package = Package(
         .target(name: "Interface", dependencies: ["Search", "Base"], swiftSettings: strict),
         .executableTarget(
             name: "SimpleSpotlight", dependencies: ["Interface", "Search", "Base"],
-            exclude: ["Info.plist"],
+            exclude: ["Info.plist", "AppIcon.svg"],
             swiftSettings: strict),
         .testTarget(name: "BaseTests", dependencies: ["Base"], swiftSettings: tests),
         .testTarget(
