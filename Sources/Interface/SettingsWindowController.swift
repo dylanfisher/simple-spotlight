@@ -1,16 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// The settings window: `SettingsView` in an ordinary titled window. The app stays an agent
-/// app, with no Dock icon or menu bar, so showing the window activates the app, and closing it
-/// gives the keys back to the app that had them (docs/decisions/0015-settings-window.md).
+/// The settings window: a toolbar of panes, as macOS apps' settings windows have, each a
+/// `SettingsView` in an ordinary titled window titled after it. The app stays an agent app, with
+/// no Dock icon or menu bar, so showing the window activates the app, and closing it gives the
+/// keys back to the app that had them (docs/decisions/0015-settings-window.md).
 @MainActor
-public final class SettingsWindowController: NSObject, NSWindowDelegate {
+public final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// Whether the window is open.
     public private(set) var isShown = false
+    /// The pane showing, or shown last; the window opens on it again.
+    public private(set) var pane = SettingsPane.general
 
     private let model: SettingsModel
-    private let title: String
+    private let spotlight: SpotlightIndexModel
+    private let appName: String
     private let quitTitle: String
     private let ordersWindow: Bool
     private let quit: @MainActor () -> Void
@@ -20,27 +24,38 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var previousApp: NSRunningApplication?
 
     /// - Parameters:
-    ///   - title: The window's title.
+    ///   - spotlight: What the Spotlight pane shows; read again each time the pane shows.
+    ///   - appName: The app's name, as the panes' notes say it.
     ///   - quitTitle: The label of the window's Quit button.
     ///   - quit: Runs on ⌘Q in the window and on the Quit button.
     ///   - ordersWindow: Whether showing puts the window on screen and activates the app. Tests
     ///     pass false.
     public init(
-        model: SettingsModel, title: String, quitTitle: String,
+        model: SettingsModel, spotlight: SpotlightIndexModel, appName: String, quitTitle: String,
         quit: @escaping @MainActor () -> Void,
         ordersWindow: Bool = true
     ) {
         self.model = model
-        self.title = title
+        self.spotlight = spotlight
+        self.appName = appName
         self.quitTitle = quitTitle
         self.quit = quit
         self.ordersWindow = ordersWindow
     }
 
-    /// Brings the window forward, making it the first time.
-    public func show() {
+    /// Brings the window forward, making it the first time, on `pane` when given and otherwise
+    /// on the pane shown last.
+    public func show(_ pane: SettingsPane? = nil) {
         isShown = true
+        let isNew = self.window == nil
         let window = self.window ?? makeWindow()
+        let chosen = pane ?? self.pane
+        if isNew || chosen != self.pane {
+            select(chosen)
+        } else if chosen == .spotlight {
+            spotlight.refresh()
+        }
+        if isNew { window.center() }
         guard ordersWindow else { return }
         if !NSApplication.shared.isActive {
             let frontmost = NSWorkspace.shared.frontmostApplication
@@ -53,23 +68,90 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.makeFirstResponder(nil)
     }
 
-    var rootView: SettingsView {
-        SettingsView(model: model, quitTitle: quitTitle, quit: quit)
+    func rootView(_ pane: SettingsPane) -> SettingsView {
+        SettingsView(
+            pane: pane, model: model, spotlight: spotlight, appName: appName,
+            quitTitle: quitTitle, quit: quit)
     }
 
     private func makeWindow() -> SettingsWindow {
-        let hosting = NSHostingController(rootView: rootView)
-        hosting.sizingOptions = [.preferredContentSize]
-        let window = SettingsWindow(contentViewController: hosting)
-        window.styleMask = [.titled, .closable, .resizable]
-        window.title = title
+        let window = SettingsWindow(
+            contentRect: NSRect(x: 0, y: 0, width: SettingsView.width, height: pane.height),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true)
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenNone]
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.quit = quit
-        window.center()
+        let toolbar = NSToolbar(identifier: "Settings")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconAndLabel
+        window.toolbar = toolbar
+        window.toolbarStyle = .preference
+        // Only the height changes by hand, for a long list of folders or apps.
+        window.contentMinSize = NSSize(width: SettingsView.width, height: Self.minHeight)
+        window.contentMaxSize = NSSize(
+            width: SettingsView.width, height: CGFloat.greatestFiniteMagnitude)
         self.window = window
         return window
+    }
+
+    /// The least height a pane can be made by hand.
+    static let minHeight: CGFloat = 160
+
+    /// Shows `pane` at its height, the window's top edge where it was, and leaves a shortcut
+    /// half recorded, so the hotkey comes back.
+    private func select(_ pane: SettingsPane) {
+        guard let window else { preconditionFailure("a settings pane was chosen with no window") }
+        if pane != self.pane { model.recorder.stop() }
+        self.pane = pane
+        window.toolbar?.selectedItemIdentifier = pane.item
+        window.title = pane.title
+        let top = window.frame.maxY
+        let hosting = NSHostingController(rootView: rootView(pane))
+        // The window's size is set here and by hand, not from the view's.
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
+        var frame = window.frameRect(
+            forContentRect: NSRect(x: 0, y: 0, width: SettingsView.width, height: pane.height))
+        frame.origin = NSPoint(x: window.frame.minX, y: top - frame.height)
+        window.setFrame(frame, display: true, animate: window.isVisible)
+        if pane == .spotlight { spotlight.refresh() }
+    }
+
+    // MARK: NSToolbarDelegate
+
+    public func toolbar(
+        _ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard let pane = SettingsPane(rawValue: itemIdentifier.rawValue) else { return nil }
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = pane.title
+        item.image = NSImage(systemSymbolName: pane.symbol, accessibilityDescription: pane.title)
+        item.target = self
+        item.action = #selector(choosePane(_:))
+        return item
+    }
+
+    public func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPane.allCases.map(\.item)
+    }
+
+    public func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        SettingsPane.allCases.map(\.item)
+    }
+
+    public func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar)
+        -> [NSToolbarItem.Identifier]
+    {
+        SettingsPane.allCases.map(\.item)
+    }
+
+    @objc private func choosePane(_ sender: NSToolbarItem) {
+        guard let pane = SettingsPane(rawValue: sender.itemIdentifier.rawValue) else {
+            preconditionFailure("the settings toolbar has no pane \(sender.itemIdentifier)")
+        }
+        select(pane)
     }
 
     public func windowWillClose(_ notification: Notification) {

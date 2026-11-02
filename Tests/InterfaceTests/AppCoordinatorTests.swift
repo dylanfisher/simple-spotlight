@@ -117,6 +117,21 @@ private let safari = SearchItem(
     target: .openFile(URL(filePath: "/Applications/Safari.app")))
 private let configURL = URL(filePath: "/tmp/simple-spotlight-test/config.json")
 
+/// The alert's Open Settings goes to the pane where another shortcut can be recorded.
+@MainActor @Test func theNoticesOpenSettingsShowsTheShortcutPane() async throws {
+    let fixture = Fixture()
+    fixture.systemHotKeys = [
+        SystemHotKey(modifiers: KeyChord.Modifiers.command.rawValue, code: 49, isEnabled: true)
+    ]
+    await fixture.apply(Search.Settings())
+    let choose = try #require(fixture.choose.first)
+
+    choose(.openSettings)
+
+    #expect(fixture.coordinator.settingsWindow.isShown)
+    #expect(fixture.coordinator.settingsWindow.pane == .shortcut)
+}
+
 @MainActor
 private final class Fixture {
     let opener = StubOpener()
@@ -128,6 +143,8 @@ private final class Fixture {
     let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     var systemHotKeys: [SystemHotKey] = []
     var notices: [HotKeyConflictNotice.Content] = []
+    /// What each notice's buttons call, in the order the notices showed.
+    var choose: [@MainActor (HotKeyConflictNotice.Choice) -> Void] = []
     var quits = 0
     var announcements: [String] = []
     let stateFolder: URL
@@ -171,9 +188,12 @@ private final class Fixture {
             updateConfig: { change throws(ConfigError) in await config.update(change) },
             hotKey: hotKey, systemHotKeys: { [unowned self] in systemHotKeys },
             conflictNotice: HotKeyConflictNotice(appName: "Simple Spotlight") {
-                [unowned self] content, _ in notices.append(content)
+                [unowned self] content, chosen in
+                notices.append(content)
+                choose.append(chosen)
             },
             loginItem: LoginItem(service: loginItem, appName: "Simple Spotlight"),
+            spotlightIndex: StubSpotlightIndex(),
             appState: AppStateStore(folder: stateFolder),
             buildIndex: buildIndex ?? { settings throws(CancellationError) in
                 recorder.build(settings)

@@ -48,7 +48,17 @@ public final class SettingsModel {
     /// Where the config file is, as the window shows it.
     let configFile: URL
     let openConfigFile: @MainActor () -> Void
+    let revealConfigFile: @MainActor () -> Void
     let openKeyboardShortcuts: @MainActor () -> Void
+    /// Puts text alone on the clipboard.
+    private let copy: @MainActor (String) -> Void
+    /// Whether Copy Default Config's button says `copiedTitle`, as it does for `copiedDuration`
+    /// after a copy.
+    private(set) var defaultConfigCopied = false
+    /// Times how long the button says `copiedTitle`. Tests replace it.
+    @ObservationIgnored var clock: any Clock<Duration> = ContinuousClock()
+    /// The wait that turns the button's title back, which tests wait for.
+    @ObservationIgnored private(set) var copiedReset: Task<Void, Never>?
 
     /// The settings the store last read.
     private var stored = Search.Settings()
@@ -76,12 +86,16 @@ public final class SettingsModel {
     public init(
         configFile: URL, update: @escaping Update,
         openConfigFile: @escaping @MainActor () -> Void,
+        revealConfigFile: @escaping @MainActor () -> Void,
+        copy: @escaping @MainActor (String) -> Void,
         openKeyboardShortcuts: @escaping @MainActor () -> Void,
         recordingChanged: @escaping @MainActor (Bool) -> Void
     ) {
         self.configFile = configFile
         self.update = update
         self.openConfigFile = openConfigFile
+        self.revealConfigFile = revealConfigFile
+        self.copy = copy
         self.openKeyboardShortcuts = openKeyboardShortcuts
         recorder = ShortcutRecorder(recordingChanged: recordingChanged)
         recorder.recorded = { [weak self] chord in self?.change { $0.hotkey = chord } }
@@ -121,6 +135,27 @@ public final class SettingsModel {
             } catch {
                 failed(id, error)
             }
+        }
+    }
+
+    /// What Copy Default Config's button says for a moment after a copy, as a Copy button in
+    /// macOS does.
+    static let copiedTitle = "Copied"
+    static let copiedDuration: Duration = .milliseconds(1500)
+
+    /// Puts a new config file's text, every setting at its default, on the clipboard, and has
+    /// the button say `copiedTitle` for `copiedDuration`; a copy meanwhile starts it again.
+    func copyDefaultConfig() {
+        copy(ConfigFile.defaultText)
+        defaultConfigCopied = true
+        copiedReset?.cancel()
+        copiedReset = Task { [clock] in
+            do {
+                try await clock.sleep(for: Self.copiedDuration)
+            } catch {
+                return  // Cancelled by a newer copy, which turns the title back itself.
+            }
+            defaultConfigCopied = false
         }
     }
 

@@ -65,6 +65,8 @@ public final class AppCoordinator {
     ///   - makeConfigFile: Gives the config file, creating the default one if it's missing.
     ///   - updateConfig: Writes a change from the settings window into the config file.
     ///   - systemHotKeys: The shortcuts macOS handles itself, checked for the hotkey's chord.
+    ///   - spotlightIndex: macOS's Spotlight index, which the settings window's Spotlight pane
+    ///     reads and switches.
     ///   - appState: Remembers the chords whose conflict alert the user has seen.
     ///   - usage: Holds what the user has opened; loaded now, off the main actor.
     ///   - now: The time an open is recorded at and usage decays to.
@@ -77,7 +79,8 @@ public final class AppCoordinator {
         updateConfig: @escaping SettingsModel.Update,
         hotKey: any HotKeyRegistrar,
         systemHotKeys: @escaping @MainActor () throws -> [SystemHotKey],
-        conflictNotice: HotKeyConflictNotice, loginItem: LoginItem, appState: AppStateStore,
+        conflictNotice: HotKeyConflictNotice, loginItem: LoginItem,
+        spotlightIndex: any SpotlightIndexService, appState: AppStateStore,
         buildIndex: @escaping BuildIndex, watchIndex: @escaping WatchIndex, usage: UsageStore,
         now: @escaping @Sendable () -> Date, quit: @escaping @MainActor () -> Void,
         reportError: @escaping @MainActor (any Error) -> Void, log: Logger,
@@ -108,11 +111,13 @@ public final class AppCoordinator {
         settingsModel = SettingsModel(
             configFile: configFile, update: updateConfig,
             openConfigFile: { [weak self] in self?.panel.openConfigFile() },
+            revealConfigFile: { [weak self] in self?.panel.revealConfigFile() },
+            copy: { opener.copy($0) },
             openKeyboardShortcuts: { opener.open(HotKeyConflictNotice.keyboardShortcutsURL) },
             recordingChanged: { [weak self] in self?.recordingChanged($0) })
         settingsWindow = SettingsWindowController(
-            model: settingsModel, title: "\(appName) Settings",
-            quitTitle: commands.quitTitle, quit: quit,
+            model: settingsModel, spotlight: SpotlightIndexModel(service: spotlightIndex),
+            appName: appName, quitTitle: commands.quitTitle, quit: quit,
             ordersWindow: ordersPanel)
         updateUsage { usage in try await usage.load(at: now()) }
     }
@@ -157,10 +162,10 @@ public final class AppCoordinator {
         }
     }
 
-    /// Hides the panel and brings the settings window forward.
-    public func openSettings() {
+    /// Hides the panel and brings the settings window forward, on `pane` when given.
+    public func openSettings(_ pane: SettingsPane? = nil) {
         panel.hide()
-        settingsWindow.show()
+        settingsWindow.show(pane)
     }
 
     /// Shows the panel, as a second launch of the app asks: the way in when the hotkey doesn't
@@ -275,7 +280,7 @@ public final class AppCoordinator {
     private func handle(_ choice: HotKeyConflictNotice.Choice) {
         switch choice {
         case .openKeyboardShortcuts: opener.open(HotKeyConflictNotice.keyboardShortcutsURL)
-        case .openSettings: openSettings()
+        case .openSettings: openSettings(.shortcut)
         case .dismiss: break
         }
     }

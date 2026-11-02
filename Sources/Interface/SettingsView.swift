@@ -2,11 +2,15 @@ import Search
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The settings window's content: a grouped form, as macOS's own settings windows lay theirs
-/// out, with a control for each key of the config file and a button that opens the file
-/// (docs/decisions/0015-settings-window.md).
+/// One pane of the settings window: a grouped form, as macOS's own settings windows lay theirs
+/// out, with a control for each key of the config file the pane covers
+/// (docs/decisions/0015-settings-window.md). While the file has an error, or a change couldn't
+/// be saved, each pane says so at the top.
 struct SettingsView: View {
+    let pane: SettingsPane
     let model: SettingsModel
+    let spotlight: SpotlightIndexModel
+    let appName: String
     let quitTitle: String
     let quit: @MainActor () -> Void
 
@@ -17,23 +21,36 @@ struct SettingsView: View {
             if model.isFileBroken || model.writeError != nil {
                 problems
             }
-            Group {
+            switch pane {
+            case .general:
                 general
-                results
-                folders
-                excluded
-            }
-            .disabled(model.isFileBroken)
-            file
-            shortcut
+                    .disabled(model.isFileBroken)
+                file
+                Section {
+                    Button(quitTitle, action: quit)
+                }
+            case .results:
+                Group {
+                    results
+                    dimming
+                }
                 .disabled(model.isFileBroken)
-            Section {
-                Button(quitTitle, action: quit)
+            case .apps:
+                Group {
+                    folders
+                    excluded
+                }
+                .disabled(model.isFileBroken)
+            case .shortcut:
+                shortcut
+                    .disabled(model.isFileBroken)
+            case .spotlight:
+                spotlightIndex
             }
         }
         .formStyle(.grouped)
         .frame(width: Self.width)
-        .frame(minHeight: 360, idealHeight: 680)
+        .frame(maxHeight: .infinity)
     }
 
     // MARK: Sections
@@ -70,7 +87,7 @@ struct SettingsView: View {
     }
 
     private var results: some View {
-        Section("Results") {
+        Section("Show") {
             Toggle("Apps", isOn: binding(\.searchApplications))
             Toggle("System Settings", isOn: binding(\.searchSystemSettings))
             Toggle("Script commands", isOn: binding(\.scriptCommands))
@@ -80,6 +97,11 @@ struct SettingsView: View {
             ) {
                 LabeledContent("Most rows", value: "\(model.settings.maxResults)")
             }
+        }
+    }
+
+    private var dimming: some View {
+        Section("Dimming") {
             Toggle(isOn: binding(\.dimUnused)) {
                 Text("Dim apps not opened lately")
                 Text("The apps, panes and scripts you use stand out.")
@@ -119,6 +141,7 @@ struct SettingsView: View {
         }
     }
 
+    /// Where the config file is, and a row of buttons for it.
     private var file: some View {
         Section {
             LabeledContent("Config file") {
@@ -129,10 +152,72 @@ struct SettingsView: View {
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)
             }
-            Button("Open \(ConfigFile.name)", action: model.openConfigFile)
+            HStack {
+                Button("Open in Editor", action: model.openConfigFile)
+                Button("Reveal in Finder", action: model.revealConfigFile)
+                Button(action: model.copyDefaultConfig) {
+                    // Both titles take room, so the button keeps its width when it changes.
+                    ZStack {
+                        Text("Copy Default Config")
+                            .opacity(model.defaultConfigCopied ? 0 : 1)
+                        Text(SettingsModel.copiedTitle)
+                            .opacity(model.defaultConfigCopied ? 1 : 0)
+                    }
+                }
+                .accessibilityLabel(
+                    model.defaultConfigCopied ? SettingsModel.copiedTitle : "Copy Default Config"
+                )
+                .help("Copy a new config file's text, every setting at its default")
+            }
         } footer: {
             Text("Changes here are saved to the file, and edits to the file show here.")
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    /// Whether macOS's Spotlight indexes the disks, and a button that turns it off or on.
+    private var spotlightIndex: some View {
+        Section {
+            LabeledContent("Spotlight indexing") {
+                HStack {
+                    if spotlight.isBusy {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(spotlightStatus)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Button(
+                spotlight.isIndexing == false
+                    ? "Turn On Spotlight Indexing" : "Turn Off Spotlight Indexing",
+                action: spotlight.toggle
+            )
+            .disabled(spotlight.isBusy || spotlight.isIndexing == nil)
+            if let problem = spotlight.problem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.callout)
+                    .textSelection(.enabled)
+            }
+        } footer: {
+            Text(
+                """
+                \(appName) finds apps, settings and scripts without the Spotlight index. Turning \
+                indexing off stops macOS indexing every file on every disk in the background, \
+                which saves CPU, battery and disk activity. Spotlight, and search in Finder and \
+                Mail, then find no new files until it's back on. Asks for an administrator's \
+                password.
+                """
+            )
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var spotlightStatus: String {
+        switch spotlight.isIndexing {
+        case true?: "On"
+        case false?: "Off"
+        case nil: spotlight.isBusy ? "Checking…" : "Unknown"
         }
     }
 

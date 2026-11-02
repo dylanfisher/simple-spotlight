@@ -9,15 +9,24 @@ import Testing
 private func model() -> SettingsModel {
     SettingsModel(
         configFile: URL(filePath: "/tmp/simple-spotlight-test/config.json"),
-        update: { _ throws(ConfigError) in }, openConfigFile: {}, openKeyboardShortcuts: {},
-        recordingChanged: { _ in })
+        update: { _ throws(ConfigError) in }, openConfigFile: {}, revealConfigFile: {},
+        copy: { _ in }, openKeyboardShortcuts: {}, recordingChanged: { _ in })
+}
+
+@MainActor
+private func controller(
+    _ model: SettingsModel = model(), spotlight: StubSpotlightIndex = StubSpotlightIndex(),
+    quit: @escaping @MainActor () -> Void = {}
+) -> SettingsWindowController {
+    SettingsWindowController(
+        model: model, spotlight: SpotlightIndexModel(service: spotlight),
+        appName: "Simple Spotlight", quitTitle: "Quit Simple Spotlight", quit: quit,
+        ordersWindow: false)
 }
 
 @MainActor @Test func showingAndClosingTracksTheWindow() {
     _ = NSApplication.shared
-    let controller = SettingsWindowController(
-        model: model(), title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
-        quit: {}, ordersWindow: false)
+    let controller = controller()
     #expect(!controller.isShown)
 
     controller.show()
@@ -32,9 +41,7 @@ private func model() -> SettingsModel {
 @MainActor @Test func closingReleasesTheWindowAndShowingBuildsAnother() {
     _ = NSApplication.shared
     let model = model()
-    let controller = SettingsWindowController(
-        model: model, title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
-        quit: {}, ordersWindow: false)
+    let controller = controller(model)
     model.receive(
         ConfigStore.State(
             settings: settings(maxResults: 3), errors: [], isFileBroken: false))
@@ -54,22 +61,18 @@ private func model() -> SettingsModel {
 /// The Quit button calls what the controller was given, under the title it was given.
 @MainActor @Test func theQuitButtonRunsTheInjectedQuit() {
     var quits = 0
-    let controller = SettingsWindowController(
-        model: model(), title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
-        quit: { quits += 1 }, ordersWindow: false)
+    let controller = controller(quit: { quits += 1 })
 
-    controller.rootView.quit()
+    controller.rootView(.general).quit()
 
     #expect(quits == 1)
-    #expect(controller.rootView.quitTitle == "Quit Simple Spotlight")
+    #expect(controller.rootView(.general).quitTitle == "Quit Simple Spotlight")
 }
 
 @MainActor @Test func closingTheWindowStopsARecording() {
     _ = NSApplication.shared
     let model = model()
-    let controller = SettingsWindowController(
-        model: model, title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
-        quit: {}, ordersWindow: false)
+    let controller = controller(model)
     controller.show()
     model.recorder.start()
     #expect(model.recorder.isRecording)
@@ -82,9 +85,7 @@ private func model() -> SettingsModel {
 @MainActor @Test func closingStopsARecording() {
     _ = NSApplication.shared
     let model = model()
-    let controller = SettingsWindowController(
-        model: model, title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
-        quit: {}, ordersWindow: false)
+    let controller = controller(model)
     controller.show()
     model.recorder.start()
 
@@ -93,9 +94,9 @@ private func model() -> SettingsModel {
     #expect(!model.recorder.isRecording)
 }
 
-/// Lays the form out off screen, with a file error and a hotkey conflict showing, so a view
+/// Lays each pane out off screen, with a file error and a hotkey conflict showing, so a view
 /// that traps when built fails here rather than in the app.
-@MainActor @Test func theFormLaysOut() {
+@MainActor @Test func everyPaneLaysOut() {
     _ = NSApplication.shared
     let model = model()
     model.receive(
@@ -104,12 +105,79 @@ private func model() -> SettingsModel {
             isFileBroken: true))
     model.hotKeyConflict = SettingsModel.Conflict(
         chord: KeyChord(.command, .space), conflict: .systemShortcut)
-    let view = NSHostingView(rootView: SettingsView(model: model, quitTitle: "Quit", quit: {}))
+    let controller = controller(model)
 
-    view.layoutSubtreeIfNeeded()
+    for pane in SettingsPane.allCases {
+        let view = NSHostingView(rootView: controller.rootView(pane))
+        view.layoutSubtreeIfNeeded()
 
-    #expect(view.fittingSize.width == SettingsView.width)
-    #expect(view.fittingSize.height > 0)
+        #expect(view.fittingSize.width == SettingsView.width, "\(pane)")
+        #expect(view.fittingSize.height > 0, "\(pane)")
+    }
+}
+
+@MainActor @Test func theWindowHasAToolbarItemForEachPaneAndOpensOnGeneral() throws {
+    _ = NSApplication.shared
+    let controller = controller()
+
+    controller.show()
+
+    let window = try #require(controller.window)
+    #expect(window.toolbar?.items.map(\.label) == SettingsPane.allCases.map(\.title))
+    #expect(window.toolbar?.selectedItemIdentifier == SettingsPane.general.item)
+    #expect(window.title == "General")
+    #expect(controller.pane == .general)
+}
+
+/// Choosing a pane titles the window after it and sizes the content to it; the window opens on
+/// the pane shown last.
+@MainActor @Test func showingAPaneTitlesAndSizesTheWindowAndIsRemembered() throws {
+    _ = NSApplication.shared
+    let controller = controller()
+
+    controller.show(.apps)
+
+    let window = try #require(controller.window)
+    #expect(window.title == "Apps")
+    #expect(window.toolbar?.selectedItemIdentifier == SettingsPane.apps.item)
+    #expect(window.contentRect(forFrameRect: window.frame).height == SettingsPane.apps.height)
+
+    controller.windowWillClose(Notification(name: NSWindow.willCloseNotification))
+    controller.show()
+
+    #expect(controller.window?.title == "Apps")
+}
+
+@MainActor @Test func leavingTheShortcutPaneStopsARecording() {
+    _ = NSApplication.shared
+    let model = model()
+    let controller = controller(model)
+    controller.show(.shortcut)
+    model.recorder.start()
+
+    controller.show(.results)
+
+    #expect(!model.recorder.isRecording)
+}
+
+/// The Spotlight pane reads the index each time it shows, so a change made in Terminal shows.
+@MainActor @Test func theSpotlightPaneReadsTheIndexEachTimeItShows() async throws {
+    _ = NSApplication.shared
+    let index = StubSpotlightIndex(indexing: true)
+    let spotlight = SpotlightIndexModel(service: index)
+    let controller = SettingsWindowController(
+        model: model(), spotlight: spotlight, appName: "Simple Spotlight",
+        quitTitle: "Quit Simple Spotlight", quit: {}, ordersWindow: false)
+
+    controller.show(.spotlight)
+    await spotlight.work?.value
+    #expect(spotlight.isIndexing == true)
+
+    try await index.setIndexing(false)
+    controller.show()
+    await spotlight.work?.value
+
+    #expect(spotlight.isIndexing == false)
 }
 
 @MainActor

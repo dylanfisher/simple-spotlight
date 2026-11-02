@@ -42,7 +42,8 @@ private func model(_ file: StubFile, recording: @escaping @MainActor (Bool) -> V
     SettingsModel(
         configFile: configURL,
         update: { change throws(ConfigError) in try await file.update(change) },
-        openConfigFile: {}, openKeyboardShortcuts: {}, recordingChanged: recording)
+        openConfigFile: {}, revealConfigFile: {}, copy: { _ in }, openKeyboardShortcuts: {},
+        recordingChanged: recording)
 }
 
 private func state(_ settings: Search.Settings, broken: Bool = false) -> ConfigStore.State {
@@ -161,4 +162,27 @@ private func waitForHeldWrites(_ file: StubFile, count: Int) async {
     #expect(model.settings.hotkey == KeyChord([.control, .option], .k))
     await model.lastWrite?.value
     #expect(await file.settings.hotkey == KeyChord([.control, .option], .k))
+}
+
+/// A clock whose sleeps end at once, so the Copied title turns back without waiting.
+private struct ImmediateClock: Clock {
+    var now: ContinuousClock.Instant { .now }
+    var minimumResolution: Duration { .zero }
+    func sleep(until deadline: ContinuousClock.Instant, tolerance: Duration?) async throws {}
+}
+
+@MainActor @Test func copyDefaultConfigCopiesTheDefaultFileAndSaysCopiedForAMoment() async {
+    var copied: [String] = []
+    let model = SettingsModel(
+        configFile: configURL, update: { _ throws(ConfigError) in }, openConfigFile: {},
+        revealConfigFile: {}, copy: { copied.append($0) }, openKeyboardShortcuts: {},
+        recordingChanged: { _ in })
+    model.clock = ImmediateClock()
+
+    model.copyDefaultConfig()
+
+    #expect(copied == [ConfigFile.defaultText])
+    #expect(model.defaultConfigCopied)
+    await model.copiedReset?.value
+    #expect(!model.defaultConfigCopied)
 }

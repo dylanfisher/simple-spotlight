@@ -15,10 +15,16 @@ and has to cope with a file the user is editing, or has broken, while it is open
 
 ## Decision
 
-- **Layout.** SwiftUI `Form` with `.formStyle(.grouped)`, as macOS 26's System Settings and
-  apps' settings windows lay out: labels left, controls right, in sections (the shortcut, login
-  and displays; results; app folders; apps left out; the config file). One titled, closable
-  window in an `NSHostingController`. Opening it activates the app; closing it activates the
+- **Layout.** A toolbar of panes with `.preference` style, as Searcher's settings window and
+  macOS apps' have, since one long form needed scrolling to reach the shortcut: General (login,
+  displays, the config file with Open in Editor, Reveal in Finder and Copy Default Config in a
+  row, Quit), Results, Apps (app folders and apps left out), Shortcut, and Spotlight
+  ([0019](0019-spotlight-indexing.md)). Each pane is a SwiftUI `Form` with `.formStyle(.grouped)`:
+  labels left, controls right, in sections, the file's errors at the top of each. The window is
+  titled after its pane and sized to it, keeping its top edge; only its height can be changed by
+  hand. It opens on the pane shown last; the conflict alert's Open Settings opens Shortcut.
+  Leaving Shortcut stops a recording. One titled, closable window, each pane in an
+  `NSHostingController`. Opening it activates the app; closing it activates the
   app that was frontmost when it opened, since an agent app with no window would otherwise keep
   the keys. The app yields activation to it first (`yieldActivation(to:)`, as macOS 14 and later
   require), and does nothing if another app has the keys by then, as when the user switched

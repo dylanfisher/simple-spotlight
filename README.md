@@ -27,13 +27,19 @@ does the "Quit Simple Spotlight" row.
 
 Settings live in `~/.config/simple-spotlight/config.json`, and the Settings window (⌘, in the
 panel) changes them there: each change replaces that one value in the file, or adds the key with
-its comment, and leaves the rest of the file, your comments included, as it is. Its "Open
-config.json" button opens the file. The app writes the default file the first time: every key at
+its comment, and leaves the rest of the file, your comments included, as it is. Its General
+pane opens the file in your editor, shows it in Finder, or copies a default file's text. The app
+writes the default file the first time: every key at
 its default, with a comment above it saying what it does and what it accepts. `Settings.Keys` in
 `Sources/Search/Settings.swift` declares them. The file allows comments and trailing commas. A
 save applies right away, in the Settings window too; if the file has an error, a row at the top
 of the panel names the line, the last good settings stay, and the Settings window lists the
 errors and changes nothing until the file is fixed.
+
+The Settings window's Spotlight pane turns macOS's own Spotlight indexing off on every disk, and
+back on. Simple Spotlight doesn't use that index, so with indexing off macOS stops the background
+work of indexing every file; Spotlight, Finder and Mail search then find no new files. It asks for
+an administrator's password.
 
 Set `"launchAtLogin": true` to start the app at login. It registers the app where it is, so
 launch it from where it will stay. If macOS asks for approval, a row in the panel opens Login

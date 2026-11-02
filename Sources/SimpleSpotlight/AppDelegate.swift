@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotKey: HotKey(), systemHotKeys: { try HotKey.systemHotKeys() },
             conflictNotice: HotKeyConflictNotice(appName: appName),
             loginItem: LoginItem(service: MainAppLoginItem(), appName: appName),
+            spotlightIndex: SpotlightIndex(),
             appState: AppStateStore(folder: AppSupport.standardFolder()),
             buildIndex: { settings throws(CancellationError) in
                 try await settings.indexBuilder().build()

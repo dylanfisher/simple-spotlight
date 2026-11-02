@@ -382,10 +382,20 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// Hides the panel and opens the config file, making the default one if there is none.
     public func openConfigFile() {
+        withConfigFile { [opener] in opener.open($0) }
+    }
+
+    /// Hides the panel and shows the config file in Finder, making the default one if there is
+    /// none.
+    public func revealConfigFile() {
+        withConfigFile { [opener] in opener.reveal($0) }
+    }
+
+    private func withConfigFile(_ use: @escaping @MainActor (URL) -> Void) {
         hide()
         configFileOpened = Task {
             do throws(ConfigError) {
-                opener.open(try await configFile())
+                use(try await configFile())
             } catch {
                 reportError(error)
             }

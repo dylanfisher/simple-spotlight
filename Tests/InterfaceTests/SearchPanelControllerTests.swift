@@ -691,6 +691,16 @@ extension Fixture {
     #expect(fixture.errors.isEmpty)
 }
 
+@MainActor @Test func theConfigFileIsRevealedFromTheController() async throws {
+    let fixture = Fixture()
+
+    fixture.controller.revealConfigFile()
+
+    await fixture.controller.configFileOpened?.value
+    #expect(fixture.opener.calls == [.reveal(configURL)])
+    #expect(fixture.errors.isEmpty)
+}
+
 @MainActor @Test func aConfigFileThatCantBeMadeIsReported() async throws {
     let fixture = Fixture()
     fixture.configResult = .failure(ConfigError(reason: "can't write it"))
