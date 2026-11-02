@@ -111,7 +111,8 @@ public final class AppCoordinator {
             openKeyboardShortcuts: { opener.open(HotKeyConflictNotice.keyboardShortcutsURL) },
             recordingChanged: { [weak self] in self?.recordingChanged($0) })
         settingsWindow = SettingsWindowController(
-            model: settingsModel, title: "\(appName) Settings", quit: quit,
+            model: settingsModel, title: "\(appName) Settings",
+            quitTitle: commands.quitTitle, quit: quit,
             ordersWindow: ordersPanel)
         updateUsage { usage in try await usage.load(at: now()) }
     }

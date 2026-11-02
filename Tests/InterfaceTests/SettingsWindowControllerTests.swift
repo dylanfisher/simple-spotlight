@@ -16,7 +16,8 @@ private func model() -> SettingsModel {
 @MainActor @Test func showingAndClosingTracksTheWindow() {
     _ = NSApplication.shared
     let controller = SettingsWindowController(
-        model: model(), title: "Simple Spotlight Settings", quit: {}, ordersWindow: false)
+        model: model(), title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
+        quit: {}, ordersWindow: false)
     #expect(!controller.isShown)
 
     controller.show()
@@ -32,7 +33,8 @@ private func model() -> SettingsModel {
     _ = NSApplication.shared
     let model = model()
     let controller = SettingsWindowController(
-        model: model, title: "Simple Spotlight Settings", quit: {}, ordersWindow: false)
+        model: model, title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
+        quit: {}, ordersWindow: false)
     model.receive(
         ConfigStore.State(
             settings: settings(maxResults: 3), errors: [], isFileBroken: false))
@@ -49,11 +51,25 @@ private func model() -> SettingsModel {
     #expect(model.settings.maxResults == 3)
 }
 
+/// The Quit button calls what the controller was given, under the title it was given.
+@MainActor @Test func theQuitButtonRunsTheInjectedQuit() {
+    var quits = 0
+    let controller = SettingsWindowController(
+        model: model(), title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
+        quit: { quits += 1 }, ordersWindow: false)
+
+    controller.rootView.quit()
+
+    #expect(quits == 1)
+    #expect(controller.rootView.quitTitle == "Quit Simple Spotlight")
+}
+
 @MainActor @Test func closingTheWindowStopsARecording() {
     _ = NSApplication.shared
     let model = model()
     let controller = SettingsWindowController(
-        model: model, title: "Simple Spotlight Settings", quit: {}, ordersWindow: false)
+        model: model, title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
+        quit: {}, ordersWindow: false)
     controller.show()
     model.recorder.start()
     #expect(model.recorder.isRecording)
@@ -67,7 +83,8 @@ private func model() -> SettingsModel {
     _ = NSApplication.shared
     let model = model()
     let controller = SettingsWindowController(
-        model: model, title: "Simple Spotlight Settings", quit: {}, ordersWindow: false)
+        model: model, title: "Simple Spotlight Settings", quitTitle: "Quit Simple Spotlight",
+        quit: {}, ordersWindow: false)
     controller.show()
     model.recorder.start()
 
@@ -87,7 +104,7 @@ private func model() -> SettingsModel {
             isFileBroken: true))
     model.hotKeyConflict = SettingsModel.Conflict(
         chord: KeyChord(.command, .space), conflict: .systemShortcut)
-    let view = NSHostingView(rootView: SettingsView(model: model))
+    let view = NSHostingView(rootView: SettingsView(model: model, quitTitle: "Quit", quit: {}))
 
     view.layoutSubtreeIfNeeded()
 

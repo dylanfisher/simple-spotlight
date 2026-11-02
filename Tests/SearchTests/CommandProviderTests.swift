@@ -14,6 +14,11 @@ private let commands = CommandProvider(appName: "Simple Spotlight")
     #expect(Set(commands.items.map(\.id)).count == commands.items.count)
 }
 
+@Test func titlesTheQuitRowWithQuitTitle() {
+    #expect(commands.quitTitle == "Quit Simple Spotlight")
+    #expect(commands.items.map(\.title).contains(commands.quitTitle))
+}
+
 @Test func ranksItsRowsForQuitAndSettings() {
     let safari = SearchItem(
         id: "com.apple.Safari", kind: .app, title: "Safari", subtitle: nil,

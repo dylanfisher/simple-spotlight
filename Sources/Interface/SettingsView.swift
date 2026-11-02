@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 /// (docs/decisions/0015-settings-window.md).
 struct SettingsView: View {
     let model: SettingsModel
+    let quitTitle: String
+    let quit: @MainActor () -> Void
 
     static let width: CGFloat = 520
 
@@ -23,6 +25,9 @@ struct SettingsView: View {
             }
             .disabled(model.isFileBroken)
             file
+            Section {
+                Button(quitTitle, action: quit)
+            }
         }
         .formStyle(.grouped)
         .frame(width: Self.width)

@@ -11,6 +11,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private let model: SettingsModel
     private let title: String
+    private let quitTitle: String
     private let ordersWindow: Bool
     private let quit: @MainActor () -> Void
     /// Built when the window is shown and let go when it closes.
@@ -20,15 +21,18 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     /// - Parameters:
     ///   - title: The window's title.
-    ///   - quit: Runs on ⌘Q in the window.
+    ///   - quitTitle: The label of the window's Quit button.
+    ///   - quit: Runs on ⌘Q in the window and on the Quit button.
     ///   - ordersWindow: Whether showing puts the window on screen and activates the app. Tests
     ///     pass false.
     public init(
-        model: SettingsModel, title: String, quit: @escaping @MainActor () -> Void,
+        model: SettingsModel, title: String, quitTitle: String,
+        quit: @escaping @MainActor () -> Void,
         ordersWindow: Bool = true
     ) {
         self.model = model
         self.title = title
+        self.quitTitle = quitTitle
         self.quit = quit
         self.ordersWindow = ordersWindow
     }
@@ -46,8 +50,12 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    var rootView: SettingsView {
+        SettingsView(model: model, quitTitle: quitTitle, quit: quit)
+    }
+
     private func makeWindow() -> SettingsWindow {
-        let hosting = NSHostingController(rootView: SettingsView(model: model))
+        let hosting = NSHostingController(rootView: rootView)
         hosting.sizingOptions = [.preferredContentSize]
         let window = SettingsWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable, .resizable]
