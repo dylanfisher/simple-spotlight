@@ -99,7 +99,7 @@ public final class AppCoordinator {
         self.quit = quit
         self.log = log
         panel = SearchPanelController(
-            index: SearchIndex(items: commands.items), settings: Search.Settings(),
+            index: SearchIndex(items: commands.items), groups: [:], settings: Search.Settings(),
             calculator: calculator, opener: opener, icons: icons, configFile: makeConfigFile,
             openSettings: { [weak self] in self?.openSettings() },
             runCommand: { [weak self] in self?.run(command: $0) },

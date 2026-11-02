@@ -73,7 +73,7 @@ private final class Fixture {
     ) {
         _ = NSApplication.shared
         controller = SearchPanelController(
-            index: SearchIndex(items: items), settings: Settings(),
+            index: SearchIndex(items: items), groups: groups, settings: Settings(),
             calculator: CalculatorProvider(locale: Locale(identifier: "en_US")),
             opener: opener, icons: IconCache(load: { _ in NSImage() }),
             configFile: { [unowned self] () throws(ConfigError) in try configResult.get() },
@@ -1512,6 +1512,88 @@ extension Fixture {
     #expect(fixture.titles.isEmpty)
     try fixture.type("saf")
     #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func aRebuildThatRemovesATopLevelOpenGroupGoesToTheTopLevel() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.type("t")
+
+    fixture.controller.replaceIndex(SearchIndex(items: [safari]), groups: [:])
+
+    #expect(fixture.controller.path.isEmpty)
+    #expect(fixture.controller.query.isEmpty)
+    try fixture.type("saf")
+    #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func commandNumberOnAGroupRowOpensItWithoutHidingOrRecording() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("denon")
+
+    #expect(try fixture.command("1", keyCode: 18))
+
+    #expect(fixture.controller.isShown)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+    #expect(fixture.opener.calls.isEmpty)
+    #expect(fixture.recorded.isEmpty)
+}
+
+@MainActor @Test func aClickOnAGroupRowOpensItWithoutHidingOrRecording() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("denon")
+
+    fixture.controller.open(row: 0)
+
+    #expect(fixture.controller.isShown)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+    #expect(fixture.opener.calls.isEmpty)
+    #expect(fixture.recorded.isEmpty)
+}
+
+@MainActor @Test func backspaceWithTextInsideAGroupEditsTheTextAndStays() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.type("tv")
+
+    try fixture.backspace()
+
+    #expect(fixture.controller.query == "t")
+    #expect(fixture.controller.path.count == 1)
+}
+
+@MainActor @Test func arrowsDuringAnInputMethodCompositionNeitherOpenNorLeaveAGroup() throws {
+    let fixture = Fixture.withGroups()
+    let editor = try fixture.editor
+    try fixture.type("denon")
+    editor.setMarkedText(
+        "denon", selectedRange: NSRange(location: 5, length: 0),
+        replacementRange: NSRange(location: 0, length: 5))
+    #expect(editor.hasMarkedText())
+    #expect(fixture.titles == ["Denon"])
+
+    try fixture.right()
+    #expect(fixture.controller.path.isEmpty)
+
+    editor.unmarkText()
+    try fixture.enter("denon")
+    editor.setMarkedText(
+        "t", selectedRange: NSRange(location: 0, length: 0),
+        replacementRange: NSRange(location: 0, length: 0))
+    try fixture.left()
+    #expect(fixture.controller.path.count == 1)
+}
+
+@MainActor @Test func leavingAGroupAtTheTopLevelDoesNothing() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("saf")
+
+    try fixture.shiftTab()
+    try fixture.backspace()
+
+    #expect(fixture.controller.path.isEmpty)
+    #expect(fixture.controller.query == "sa")
+    #expect(fixture.controller.isShown)
 }
 
 @MainActor @Test func everyPanelShowsTheSameGroup() throws {

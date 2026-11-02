@@ -7,11 +7,11 @@ import SwiftUI
 /// opens, ⌘Return reveals in Finder, ⌘1…⌘9 open a row, ⌘C copies the field's selected text or
 /// else the selected row's path, URL or answer, Esc clears then hides, ⌘, opens Settings, as the
 /// gear does that Option shows, and ⌘Q quits, whatever the keyboard layout
-/// (docs/decisions/0008-search-panel-window.md).
+/// (docs/decisions/0008-search-panel-window.md). The keys the field's editor sends are listed
+/// at `control(_:textView:doCommandBy:)`.
 ///
-/// Opening a group's row, with Return, Tab or → at the end of the query, searches only that
-/// group's rows until Shift-Tab, ← at the start of the query, Backspace or Esc on an empty
-/// query goes back up a level. Hiding goes back to the top level.
+/// Opening a group's row searches only that group's rows until the panel goes back up a level.
+/// Hiding goes back to the top level.
 ///
 /// With `showOnAllDisplays` it shows a panel on every display, all with the same query, rows and
 /// selection; one takes the keys (docs/decisions/0013-all-displays.md).
@@ -140,6 +140,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private let ordersPanel: Bool
 
     /// - Parameters:
+    ///   - groups: The rows of each group, as `replaceIndex(_:groups:)` takes them.
     ///   - configFile: Gives the config file, creating the default one if it's missing, as
     ///     `ConfigStore.makeDefaultFileIfMissing` does.
     ///   - openSettings: Opens the settings window, on ⌘, or a click of the gear.
@@ -152,7 +153,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     ///   - ordersPanel: Whether showing puts the panel on screen. Tests pass false, so the panel
     ///     takes the keys in code but never shows or takes focus.
     public init(
-        index: SearchIndex, settings: Search.Settings, calculator: CalculatorProvider,
+        index: SearchIndex, groups: [String: [SearchItem]], settings: Search.Settings,
+        calculator: CalculatorProvider,
         opener: any ResultOpener, icons: IconCache,
         configFile: @escaping @MainActor () async throws(ConfigError) -> URL,
         openSettings: @escaping @MainActor () -> Void,
@@ -163,7 +165,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         reportError: @escaping @MainActor (any Error) -> Void,
         ordersPanel: Bool = true
     ) {
+        Self.requireRows(for: index, groups: groups)
         self.index = index
+        self.groups = groups
         self.settings = settings
         self.calculator = calculator
         self.opener = opener
@@ -377,8 +381,11 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// Searches `index` at the top level and `groups` inside a group from now on, and again now,
     /// keeping the query and the selected item. The groups open stay open while they are all
-    /// still there; otherwise the panel goes to the top level, clearing the query.
+    /// still there; otherwise the panel goes to the top level, clearing the query. Every group
+    /// row in `index` and in `groups` must have an entry in `groups`; one without is a
+    /// programming error, so this stops.
     public func replaceIndex(_ index: SearchIndex, groups: [String: [SearchItem]]) {
+        Self.requireRows(for: index, groups: groups)
         self.index = index
         self.groups = groups
         reopenPath()
@@ -394,7 +401,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         var rows = index.items
         for open in path {
             guard let row = rows.first(where: { $0.id == open.row.id }),
-                let children = groups[open.row.id]
+                let id = row.groupID, let children = groups[id]
             else {
                 path = []
                 panel.field.stringValue = ""
@@ -406,26 +413,38 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         path = reopened
     }
 
+    /// Stops unless every group row in `index` and in `groups` has an entry in `groups`, so that
+    /// opening a row never finds its group missing.
+    private static func requireRows(for index: SearchIndex, groups: [String: [SearchItem]]) {
+        let rows = index.items + groups.values.joined()
+        for id in rows.compactMap(\.groupID) {
+            precondition(groups[id] != nil, "no rows for the group \(id)")
+        }
+    }
+
     /// The index of a group's rows, which an empty query lists.
     private static func groupIndex(_ rows: [SearchItem]) -> SearchIndex {
         SearchIndex(items: rows, listsAllForEmptyQuery: true)
     }
 
-    /// Searches the rows of the group with `id`, opened from `row`, with an empty query.
+    /// Searches the rows of the group `row` opens, with an empty query. `replaceIndex` has
+    /// checked that the group has rows.
     private func openGroup(_ row: SearchItem, id: String) {
-        guard let rows = groups[id] else { preconditionFailure("no rows for the group \(id)") }
+        let rows = groups[id]!
         path.append(OpenGroup(row: row, index: Self.groupIndex(rows)))
         panel.field.stringValue = ""
         search()
     }
 
     /// Goes up from the innermost group open to its parent, or the top level, with an empty
-    /// query.
-    private func leaveGroup() {
-        precondition(!path.isEmpty, "no group is open")
+    /// query. Returns false, changing nothing, at the top level.
+    @discardableResult
+    private func leaveGroup() -> Bool {
+        guard !path.isEmpty else { return false }
         path.removeLast()
         panel.field.stringValue = ""
         search()
+        return true
     }
 
     /// Fills the rows for the query: the leading items, the calculator's row, then the index's
@@ -519,7 +538,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     func open(row index: Int) {
         guard state.rows.indices.contains(index) else { return }
         let item = state.rows[index].item
-        if case .openGroup(let id) = item.target {
+        if let id = item.groupID {
             openGroup(item, id: id)
             return
         }
@@ -537,7 +556,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         case .runScript(let url):
             opener.run(url)
         case .openGroup:
-            preconditionFailure("a group's row opens the group above, without hiding")
+            return
         }
     }
 
@@ -684,15 +703,13 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     }
 
     /// Whether the selected row is a group's, which Tab and → open.
-    private var selectsGroup: Bool {
-        guard case .openGroup = selectedRow?.item.target else { return false }
-        return true
-    }
+    private var selectsGroup: Bool { selectedRow?.item.groupID != nil }
 
     /// The keys the field's editor turns into commands: ↓, ↑ and Ctrl-N/P move, Return opens,
     /// Tab opens a group, Shift-Tab goes up from one, → and ← open and go up at the ends of the
     /// query, Backspace goes up on an empty query, and Esc clears, goes up or hides. Every other
-    /// command, and → and ← elsewhere, edits the text as usual.
+    /// command, and → and ← elsewhere or during an input method's composition, edits the text
+    /// as usual.
     public func control(
         _ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector
     ) -> Bool {
@@ -710,26 +727,26 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             // control, so moving the keys would only select its text again.
             if selectsGroup { open(row: state.selection) }
         case #selector(NSResponder.insertBacktab(_:)):
-            if !path.isEmpty { leaveGroup() }
+            leaveGroup()
         case #selector(NSResponder.moveRight(_:)):
             let caret = textView.selectedRange()
-            guard selectsGroup, caret.length == 0, caret.location == textView.string.utf16.count
+            guard !textView.hasMarkedText(), selectsGroup, caret.length == 0,
+                caret.location == textView.string.utf16.count
             else { return false }
             open(row: state.selection)
         case #selector(NSResponder.moveLeft(_:)):
-            guard !path.isEmpty, textView.selectedRange() == NSRange(location: 0, length: 0)
+            guard !textView.hasMarkedText(),
+                textView.selectedRange() == NSRange(location: 0, length: 0)
             else { return false }
-            leaveGroup()
+            return leaveGroup()
         case #selector(NSResponder.deleteBackward(_:)):
-            guard !path.isEmpty, query.isEmpty else { return false }
-            leaveGroup()
+            guard query.isEmpty else { return false }
+            return leaveGroup()
         case #selector(NSResponder.cancelOperation(_:)):
             if !query.isEmpty {
                 panel.field.stringValue = ""
                 search()
-            } else if !path.isEmpty {
-                leaveGroup()
-            } else {
+            } else if !leaveGroup() {
                 hide()
             }
         default:
@@ -752,5 +769,13 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 extension SearchPanelController.Display {
     init(_ screen: NSScreen) {
         self.init(frame: screen.frame, visible: screen.visibleFrame)
+    }
+}
+
+extension SearchItem {
+    /// The id of the group this row opens; nil for any other row.
+    fileprivate var groupID: String? {
+        guard case .openGroup(let id) = target else { return nil }
+        return id
     }
 }
