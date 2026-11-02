@@ -25,39 +25,47 @@ public final class SpotlightIndexModel {
     /// Reads the status again, unless a read or switch is running.
     public func refresh() {
         guard !isBusy else { return }
-        start { service throws(SpotlightIndexError) in try await service.isIndexing() }
+        start { service in await Self.read(service, after: nil) }
     }
 
     /// Turns indexing to the other state, then reads it back, which shows what macOS did
     /// whether or not the switch went through. Off until the status has been read.
     public func toggle() {
         guard !isBusy, let isIndexing else { return }
-        start { service throws(SpotlightIndexError) in
-            try await service.setIndexing(!isIndexing)
-            return try await service.isIndexing()
+        start { service in
+            do throws(SpotlightIndexError) {
+                try await service.setIndexing(!isIndexing)
+                return await Self.read(service, after: nil)
+            } catch {
+                return await Self.read(service, after: error)
+            }
         }
     }
 
-    private func start(
-        _ step:
-            @escaping @Sendable (any SpotlightIndexService) async throws(SpotlightIndexError)
-            -> Bool
-    ) {
+    /// What a read or switch found: the status, nil when it couldn't be read, and what failed.
+    private typealias Outcome = (isIndexing: Bool?, error: SpotlightIndexError?)
+
+    /// Reads the status, keeping `failure`, the switch's error, unless the read fails too.
+    private static func read(
+        _ service: any SpotlightIndexService, after failure: SpotlightIndexError?
+    )
+        async -> Outcome
+    {
+        do throws(SpotlightIndexError) {
+            return (try await service.isIndexing(), failure)
+        } catch {
+            return (nil, error)
+        }
+    }
+
+    private func start(_ step: @escaping @Sendable (any SpotlightIndexService) async -> Outcome) {
         isBusy = true
         work = Task { [service] in
-            do throws(SpotlightIndexError) {
-                isIndexing = try await step(service)
-                problem = nil
-            } catch {
-                switch error {
-                case .cancelled:
-                    problem = nil
-                case .failed(let reason):
-                    problem = reason
-                    // The switch may have gone through before the read back failed, so what
-                    // was shown is no longer known.
-                    isIndexing = nil
-                }
+            let outcome = await step(service)
+            isIndexing = outcome.isIndexing
+            switch outcome.error {
+            case nil, .cancelled?: problem = nil
+            case .failed(let reason)?: problem = reason
             }
             isBusy = false
         }

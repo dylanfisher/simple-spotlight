@@ -148,6 +148,20 @@ private func controller(
     #expect(controller.window?.title == "Apps")
 }
 
+/// A pane of another height moves the bottom edge; the toolbar stays where it was.
+@MainActor @Test func choosingAPaneKeepsTheWindowsTopEdge() throws {
+    _ = NSApplication.shared
+    let controller = controller()
+    controller.show(.general)
+    let window = try #require(controller.window)
+    let top = window.frame.maxY
+
+    controller.show(.apps)
+
+    #expect(window.frame.maxY == top)
+    #expect(window.frame.height > 0)
+}
+
 @MainActor @Test func leavingTheShortcutPaneStopsARecording() {
     _ = NSApplication.shared
     let model = model()

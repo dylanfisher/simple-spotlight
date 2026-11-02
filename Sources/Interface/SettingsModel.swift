@@ -141,6 +141,8 @@ public final class SettingsModel {
     /// What Copy Default Config's button says for a moment after a copy, as a Copy button in
     /// macOS does.
     static let copiedTitle = "Copied"
+    /// Copy Default Config's usual title.
+    static let copyTitle = "Copy Default Config"
     static let copiedDuration: Duration = .milliseconds(1500)
 
     /// Puts a new config file's text, every setting at its default, on the clipboard, and has

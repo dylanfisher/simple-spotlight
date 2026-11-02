@@ -80,7 +80,8 @@ import Testing
     #expect(!model.isBusy)
 }
 
-@MainActor @Test func aFailedSwitchSaysWhyAndForgetsTheStatus() async {
+/// A switch that fails leaves the status read back, so the button can try again.
+@MainActor @Test func aFailedSwitchSaysWhyAndKeepsTheStatusReadBack() async {
     let index = StubSpotlightIndex(indexing: true)
     let model = SpotlightIndexModel(service: index)
     model.refresh()
@@ -91,6 +92,21 @@ import Testing
     await model.work?.value
 
     #expect(model.problem == "mdutil: not permitted")
+    #expect(model.isIndexing == true)
+    #expect(!model.isBusy)
+}
+
+@MainActor @Test func aFailedReadSaysWhyAndForgetsTheStatus() async {
+    let index = StubSpotlightIndex(indexing: true)
+    let model = SpotlightIndexModel(service: index)
+    model.refresh()
+    await model.work?.value
+    await index.fail(read: .failed("mdutil: no such volume"))
+
+    model.refresh()
+    await model.work?.value
+
+    #expect(model.problem == "mdutil: no such volume")
     #expect(model.isIndexing == nil)
 
     await index.fail()

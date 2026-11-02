@@ -158,14 +158,14 @@ struct SettingsView: View {
                 Button(action: model.copyDefaultConfig) {
                     // Both titles take room, so the button keeps its width when it changes.
                     ZStack {
-                        Text("Copy Default Config")
+                        Text(SettingsModel.copyTitle)
                             .opacity(model.defaultConfigCopied ? 0 : 1)
                         Text(SettingsModel.copiedTitle)
                             .opacity(model.defaultConfigCopied ? 1 : 0)
                     }
                 }
                 .accessibilityLabel(
-                    model.defaultConfigCopied ? SettingsModel.copiedTitle : "Copy Default Config"
+                    model.defaultConfigCopied ? SettingsModel.copiedTitle : SettingsModel.copyTitle
                 )
                 .help("Copy a new config file's text, every setting at its default")
             }
