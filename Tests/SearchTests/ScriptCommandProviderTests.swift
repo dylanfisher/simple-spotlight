@@ -128,21 +128,55 @@ private final class ScanResult: @unchecked Sendable {
 
 /// FSEvents doesn't follow links, so a linked folder's changes wouldn't update the index; a link
 /// back up the tree would also make the scan loop.
-@Test func followsASymlinkToAScriptAndSkipsOneToAFolder() throws {
+@Test func followsASymlinkToAScriptAndReportsOneToAFolder() throws {
     let folder = try TempFolder()
     let real = try makeScript("real.sh", in: folder.url)
     let group = try makeFolder("group", in: folder.url)
     try FileManager.default.createSymbolicLink(
         at: folder.url.appendingPathComponent("alias.sh"), withDestinationURL: real)
-    try FileManager.default.createSymbolicLink(
-        at: folder.url.appendingPathComponent("linked-group"), withDestinationURL: group)
-    try FileManager.default.createSymbolicLink(
-        at: group.appendingPathComponent("loop"), withDestinationURL: folder.url)
+    let linkedGroup = folder.url.appendingPathComponent("linked-group")
+    try FileManager.default.createSymbolicLink(at: linkedGroup, withDestinationURL: group)
+    let loop = group.appendingPathComponent("loop")
+    try FileManager.default.createSymbolicLink(at: loop, withDestinationURL: folder.url)
     let found = try ScriptCommandProvider(folder: folder.url).items()
     #expect(found.items.map(\.title) == ["alias", "group", "real"])
     #expect(found.groups.keys.sorted() == [commandID("group")])
     #expect(found.groups[commandID("group")]?.isEmpty == true)
-    #expect(found.problems.isEmpty)
+    let reason = "It's a link to a folder, which isn't followed; move the folder in here."
+    #expect(
+        Set(found.problems.map(\.path)) == [linkedGroup.path, loop.path]
+            && found.problems.allSatisfy { $0.reason == reason })
+}
+
+/// A folder that can't be listed gives a problem and no group row.
+@Test func reportsASubfolderThatCantBeListed() throws {
+    let folder = try TempFolder()
+    let locked = try makeFolder("locked", in: folder.url)
+    try makeScript("tv.sh", in: locked)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+    defer {
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: locked.path)
+    }
+    let found = try ScriptCommandProvider(folder: folder.url).items()
+    #expect(found.items.isEmpty)
+    #expect(found.groups.isEmpty)
+    #expect(found.problems.map(\.path) == [locked.path])
+}
+
+/// The subtitle is the title of the group the script is in, not of the top group above it.
+@Test func promotesATopLevelScriptTwoLevelsDeepUnderItsOwnGroup() throws {
+    let folder = try TempFolder()
+    try makeFolder("A", in: folder.url)
+    let inner = try makeFolder("A/B", in: folder.url)
+    try makeScript("x.sh", in: inner, "# @top-level\n")
+    let found = try ScriptCommandProvider(folder: folder.url).items()
+    let id = commandID("A/B/x.sh")
+    let promoted = try #require(found.items.first { $0.kind == .script })
+    #expect(promoted.id == id)
+    #expect(promoted.subtitle == "B")
+    #expect(found.groups[commandID("A/B")]?.map(\.id) == [id])
+    #expect(found.groups[commandID("A")]?.map(\.id) == [commandID("A/B")])
 }
 
 @Test func reportsASymlinkThatPointsAtNothing() throws {
