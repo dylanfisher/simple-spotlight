@@ -92,6 +92,7 @@ struct SettingsView: View {
         Section("Results") {
             Toggle("Apps", isOn: binding(\.searchApplications))
             Toggle("System Settings", isOn: binding(\.searchSystemSettings))
+            Toggle("Script commands", isOn: binding(\.scriptCommands))
             Toggle("Calculator", isOn: binding(\.calculator))
             Stepper(
                 value: binding(\.maxResults), in: Search.Settings.maxResultsRange
