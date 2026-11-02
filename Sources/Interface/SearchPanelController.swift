@@ -397,9 +397,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// Searches `index` at the top level and `groups` inside a group from now on, and again now,
     /// keeping the query and the selected item. The groups open stay open while they are all
     /// still there; otherwise the panel goes up to the deepest level that is, with that level's
-    /// query put back. Every group
-    /// row in `index` and in `groups` must have an entry in `groups`; one without is a
-    /// programming error, so this stops.
+    /// query put back. Every group row in `index` and in `groups` must have an entry in
+    /// `groups`; one without is a programming error, so this stops.
     public func replaceIndex(_ index: SearchIndex, groups: [String: [SearchItem]]) {
         Self.requireRows(for: index, groups: groups)
         self.index = index
@@ -409,8 +408,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     }
 
     /// Opens the groups in `path` again from `index` and `groups`. When one is gone, goes up to
-    /// the level above the first that is, as leaving it would. Each group's row is looked up where it was opened from, so a changed
-    /// title shows.
+    /// the level above the first that is, as leaving it would. Each group's row is looked up
+    /// where it was opened from, so a changed title shows.
     private func reopenPath() {
         guard !path.isEmpty else { return }
         var reopened: [OpenGroup] = []
@@ -486,9 +485,10 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     /// Fills the rows for the query: the leading items, the calculator's row, then the index's
     /// best matches, `maxResults` in all; inside a group, only the group's best matches. The
     /// first row is selected, or with `keepingSelection` the row of the item selected before, or
-    /// with `selecting` the row of the item with that id, if it is still there. Does nothing while the panel is hidden: showing searches, and a search
-    /// no one sees would still be announced. Moving the keys searches again without
-    /// `announcing`, as VoiceOver has said the results.
+    /// with `selecting` the row of the item with that id, if it is still there. Does nothing
+    /// while the panel is hidden: showing searches, and a search no one sees would still be
+    /// announced. Moving the keys searches again without `announcing`, as VoiceOver has said the
+    /// results.
     private func search(
         keepingSelection: Bool = false, selecting id: String? = nil, announcing: Bool = true
     ) {
