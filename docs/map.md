@@ -33,7 +33,7 @@ duplicate it — do not abstract yet (principle 3).
 | Tier | Path | What belongs here | May import from |
 |---|---|---|---|
 | **base** | `Sources/Base` | Domain-free building blocks: text folding and matching, expression evaluation and number formatting, config text scanning. Foundation only; no AppKit. Portable as-is. | nothing |
-| **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator, built-in commands), ranking with usage, the config file (`Settings` declares its keys and holds their values; `ConfigFile` parses it; `ConfigStore` reads and watches it), the files the app writes for itself (`…Store` actors), and folder watching. No AppKit, so it's testable without a window. | base |
+| **search** | `Sources/Search` | The model: result types, the providers (apps, System Settings panes, calculator, built-in commands, the user's script commands), ranking with usage, the config file (`Settings` declares its keys and holds their values; `ConfigFile` parses it; `ConfigStore` reads and watches it), the files the app writes for itself (`…Store` actors), and folder watching. No AppKit, so it's testable without a window. | base |
 | **interface** | `Sources/Interface` | The search panel, its SwiftUI views and icons, the global hotkey and its conflict alert, the login item, launching results, and the coordinator that applies each config state. | search, base |
 | **app** | `Sources/SimpleSpotlight` | The executable: app delegate and wiring. Kept thin. | everything |
 
