@@ -58,7 +58,7 @@ private func called(_ calls: Calls, within limit: Duration = .seconds(10)) async
     let nested = folder.url.appendingPathComponent("Living Room/Inputs")
     try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
     let calls = Calls()
-    let watcher = try FolderWatcher(paths: [folder.url.path], latency: .milliseconds(50)) {
+    let watcher = try FolderWatcher(paths: [folder.url.path], latency: 0.05) {
         calls.record()
     }
     defer { watcher.stop() }
