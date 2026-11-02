@@ -152,6 +152,8 @@ struct ResultRow: View {
             return .symbol("gearshape")
         case .script:
             return .symbol("terminal")
+        case .group:
+            return .symbol("folder")
         case .problem:
             return .symbol("exclamationmark.triangle")
         case .app:

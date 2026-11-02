@@ -7,13 +7,22 @@ public struct IndexBuilder: Sendable {
     /// how long it took.
     public struct Build: Sendable {
         public let items: [SearchItem]
+        /// The rows of each group of script commands, keyed by the group's id, as
+        /// `ScriptCommandProvider.Tree.groups`. `items` holds the top level's group rows; a
+        /// group's own index is built from its list here, and a group that is gone after a
+        /// rebuild has none.
+        public let groups: [String: [SearchItem]]
         /// The providers' problems, in the order of their items. A problem leaves out one
         /// folder, bundle or script; the rest of the index is still built.
         public let problems: [IndexProblem]
         public let duration: Duration
 
-        public init(items: [SearchItem], problems: [IndexProblem], duration: Duration) {
+        public init(
+            items: [SearchItem], groups: [String: [SearchItem]] = [:], problems: [IndexProblem],
+            duration: Duration
+        ) {
             self.items = items
+            self.groups = groups
             self.problems = problems
             self.duration = duration
         }
@@ -52,13 +61,13 @@ public struct IndexBuilder: Sendable {
         async let appScan = Result { () throws(CancellationError) in try apps.items() }
         async let paneScan = Result { () throws(CancellationError) in try settingsPanes.items() }
         async let scriptScan = Result { () throws(CancellationError) in
-            try scripts?.items() ?? (items: [], problems: [])
+            try scripts?.items() ?? ScriptCommandProvider.Tree(items: [], groups: [:], problems: [])
         }
         let (found, panes, scripted) = try await (appScan.get(), paneScan.get(), scriptScan.get())
         return Build(
             items: (found.items + panes.items + scripted.items)
                 .filter { !excludedIDs.contains($0.id) },
-            problems: found.problems + panes.problems + scripted.problems,
+            groups: scripted.groups, problems: found.problems + panes.problems + scripted.problems,
             duration: clock.now - start)
     }
 }

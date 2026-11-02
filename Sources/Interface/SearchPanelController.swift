@@ -457,6 +457,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             runCommand(id)
         case .runScript(let url):
             opener.run(url)
+        case .openGroup:
+            break
         }
     }
 
@@ -566,10 +568,10 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     /// What ⌘C copies from `item`'s row: an app's path, a pane's `x-apple.systempreferences:` URL
     /// or a `.prefPane`'s path, a calculator answer as Return copies it. Nil for a command, a
-    /// script or a problem.
+    /// script, a group or a problem.
     private static func copiedText(for item: SearchItem) -> String? {
         switch (item.kind, item.target) {
-        case (.command, _), (.problem, _), (_, .command), (_, .runScript):
+        case (.command, _), (.problem, _), (_, .command), (_, .runScript), (_, .openGroup):
             return nil
         case (_, .openFile(let url)):
             return url.path(percentEncoded: false)

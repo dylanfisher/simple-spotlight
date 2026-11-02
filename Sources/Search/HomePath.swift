@@ -7,8 +7,10 @@ public enum HomePath {
 
     /// The folder the config file lives in.
     static let config = "~/.config/\(AppSlug.value)"
+    /// The name of the folder of the user's script commands, which also starts their ids.
+    static let scriptCommandsName = "commands"
     /// The folder of the user's script commands, beside the config file.
-    static let scriptCommands = "\(config)/commands"
+    static let scriptCommands = "\(config)/\(scriptCommandsName)"
 
     /// What `isValid` accepts, in words, for the config file's comments and errors.
     static let accepted = "a full path, ~, or a path that starts with ~/"

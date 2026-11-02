@@ -42,7 +42,8 @@ ties within a kind, and Chess is a better kind of match for "c" than "Google Chr
   panel, at the time the open or run is asked for. Scripts are things the user picks by name,
   as apps are, so a used one should rise. Calculator answers, problem rows and the built-in commands
   aren't recorded: a used "Quit Simple Spotlight" would rise above "QuickTime Player" for "q".
-  Revealing in Finder isn't an open of the item. A launch that fails afterwards still counts;
+  Opening a group of script commands isn't either: it is a step on the way to the command, and
+  the command's run is recorded. Revealing in Finder isn't an open of the item. A launch that fails afterwards still counts;
   the workspace reports that later, and it is rare.
 - **The lift stays at 3.** Learned picks now cover the queries the user has typed before, and
   any query a past one starts or extends. The lift is left for the rest, such as "fari" after

@@ -54,6 +54,24 @@ private func usage(_ opens: [String: Double]) -> UsageBoost {
         at: now)
 }
 
+/// Inside a group, an empty query lists the group's rows: the most used first, then in the
+/// order they were given, which is the commands' file names.
+@Test func emptyQueryCanListEveryItemByFrecencyThenOrder() {
+    let index = SearchIndex(
+        items: ["Power Off", "Game", "TV", "Bluray"].map(app), listsAllForEmptyQuery: true)
+    let boost = usage(["TV": 2, "Bluray": 1])
+    #expect(
+        index.results(for: "", limit: 20, usage: boost).map(\.item.title)
+            == ["TV", "Bluray", "Power Off", "Game"])
+    #expect(index.results(for: " ", limit: 2, usage: boost).map(\.item.title) == ["TV", "Bluray"])
+    #expect(
+        index.results(for: "", limit: 20).map(\.item.title) == [
+            "Power Off", "Game", "TV", "Bluray",
+        ])
+    #expect(index.results(for: "", limit: 20).allSatisfy { $0.score == nil && $0.ranges.isEmpty })
+    #expect(index.results(for: "ga", limit: 20).map(\.item.title) == ["Game"])
+}
+
 private func titles(_ query: String, _ names: [String], opens: [String: Double]) -> [String] {
     SearchIndex(items: names.map(app)).results(for: query, limit: 20, usage: usage(opens))
         .map(\.item.title)
@@ -194,7 +212,7 @@ private let calculator = SearchItem(
     let results = index.results(for: "calc", limit: 5)
     let result = try #require(results.first)
     #expect(results.map(\.item.title) == ["Rechner"])
-    #expect(result.score.kind == .exactPrefix)
+    #expect(result.score?.kind == .exactPrefix)
     #expect(result.ranges.isEmpty)
 }
 

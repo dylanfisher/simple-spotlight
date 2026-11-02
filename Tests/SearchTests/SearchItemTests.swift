@@ -20,11 +20,11 @@ import Testing
     #expect(item.foldedAlternates.map(\.bytes) == [Array("calculator".utf8)])
 }
 
-/// The user opens apps, panes and scripts; answers, commands and problems aren't counted
+/// The user opens apps, panes and scripts; answers, commands, groups and problems aren't counted
 /// (docs/decisions/0010-usage-ranking.md).
 @Test func countsOpensOfAppsPanesAndScripts() {
     let counted: [SearchItem.Kind] = [.app, .settingsPane, .script]
-    let notCounted: [SearchItem.Kind] = [.calculation, .command, .problem]
+    let notCounted: [SearchItem.Kind] = [.calculation, .command, .group, .problem]
     #expect(counted.map(\.countsAsOpen) == [true, true, true])
-    #expect(notCounted.map(\.countsAsOpen) == [false, false, false])
+    #expect(notCounted.map(\.countsAsOpen) == [false, false, false, false])
 }
