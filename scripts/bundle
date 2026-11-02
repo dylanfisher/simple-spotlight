@@ -31,6 +31,25 @@ mkdir -p "$app/Contents/MacOS"
 cp Sources/SimpleSpotlight/Info.plist "$app/Contents/Info.plist"
 cp "$bin/SimpleSpotlight" "$app/Contents/MacOS/SimpleSpotlight"
 
+# The icon is drawn once, as SVG; sips renders each size iconutil needs, so no rendered copy is
+# checked in (docs/decisions/0018-app-icon.md). The name matches CFBundleIconFile in the plist.
+# sips on macOS 12 reads SVG but writes nothing and still exits 0, so each file is checked.
+iconset=$(mktemp -d)/AppIcon.iconset
+mkdir -p "$iconset" "$app/Contents/Resources"
+for size in 16 32 128 256 512; do
+  for scale in 1 2; do
+    px=$((size * scale))
+    name="icon_${size}x${size}$([ "$scale" = 2 ] && echo @2x).png"
+    sips -s format png -z "$px" "$px" Sources/SimpleSpotlight/AppIcon.svg --out "$iconset/$name" >/dev/null
+    if [ ! -s "$iconset/$name" ]; then
+      printf 'sips wrote no %s from AppIcon.svg; it renders SVG only on macOS 13 and later.\n' "$name" >&2
+      exit 1
+    fi
+  done
+done
+iconutil -c icns -o "$app/Contents/Resources/AppIcon.icns" "$iconset"
+rm -rf "$(dirname "$iconset")"
+
 codesign --force --sign - "$app" >&2
 
 echo "$app"

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- A magnifier collaged from three pieces of paper on a blue tile: the plain magnifier, a black
+       scrap showing it inverted, and a white scrap showing it blue on white. Each scrap is turned
+       a little and shows the magnifier slipped out of line. The tile is Apple's 824 px shape on a
+       1024 px canvas, as Searcher's is. -->
+  <defs>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <!-- White fading toward warm paper at the bottom, so the blue tints through. -->
+    <linearGradient id="frost" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".35" stop-color="#ffffff" stop-opacity="0.895"/>
+      <stop offset="1" stop-color="#faf5e7" stop-opacity="0.58"/>
+    </linearGradient>
+    <!-- The black scrap, fading toward the top. -->
+    <linearGradient id="dark" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#0a0a0a"/>
+      <stop offset=".35" stop-color="#0a0a0a" stop-opacity="0.915"/>
+      <stop offset="1" stop-color="#0a0a0a" stop-opacity="0.66"/>
+    </linearGradient>
+    <!-- Black lines, fading to half toward the top of the tile. -->
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="0" y1="924" x2="0" y2="100">
+      <stop offset="0" stop-color="#0a0a0a"/>
+      <stop offset=".35" stop-color="#0a0a0a" stop-opacity="0.875"/>
+      <stop offset="1" stop-color="#0a0a0a" stop-opacity="0.5"/>
+    </linearGradient>
+    <mask id="blackScrap" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect x="150" y="520" width="520" height="330" transform="rotate(-9 410 685)" fill="#fff"/>
+    </mask>
+    <mask id="whiteScrap" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect x="480" y="130" width="380" height="420" transform="rotate(7 670 340)" fill="#fff"/>
+    </mask>
+  </defs>
+  <!-- Each lens is filled out to its ring's outer edge (r 247), so a fading ring lies over one
+       color rather than half over the lens and half over the tile.
+       WebKit applies a mask to each layer inside the masked group separately, which leaves a light
+       seam where a scrap's edge crosses the lens. So each scrap's layers sit in a group with
+       opacity, which WebKit draws whole before the mask cuts it out once. -->
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="#178bfb"/>
+    <circle cx="440" cy="440" r="247" fill="url(#frost)"/>
+    <circle cx="440" cy="440" r="220" fill="none" stroke="url(#ink)" stroke-width="54"/>
+    <path d="M612 612L900 900" fill="none" stroke="url(#ink)" stroke-width="120" stroke-linecap="round"/>
+    <g mask="url(#blackScrap)">
+      <g opacity=".999">
+        <rect width="1024" height="1024" fill="#178bfb"/>
+        <rect width="1024" height="1024" fill="url(#dark)"/>
+        <g transform="translate(20 12)">
+          <circle cx="440" cy="440" r="247" fill="#178bfb"/>
+          <circle cx="440" cy="440" r="220" fill="none" stroke="#ffffff" stroke-width="54"/>
+          <path d="M612 612L900 900" fill="none" stroke="#ffffff" stroke-width="120" stroke-linecap="round"/>
+        </g>
+      </g>
+    </g>
+    <g mask="url(#whiteScrap)">
+      <g opacity=".999">
+        <rect width="1024" height="1024" fill="#178bfb"/>
+        <rect width="1024" height="1024" fill="url(#frost)"/>
+        <g transform="translate(-16 -22)">
+          <circle cx="440" cy="440" r="247" fill="#178bfb"/>
+          <circle cx="440" cy="440" r="220" fill="none" stroke="url(#ink)" stroke-width="54"/>
+          <path d="M612 612L900 900" fill="none" stroke="url(#ink)" stroke-width="120" stroke-linecap="round"/>
+        </g>
+      </g>
+    </g>
+  </g>
+  <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#000" stroke-opacity=".14" stroke-width="4"/>
+</svg>
