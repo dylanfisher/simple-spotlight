@@ -48,6 +48,9 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
         NSApplication.shared.activate()
         window.makeKeyAndOrderFront(nil)
+        // With Full Keyboard Access on, AppKit focuses the first control, and Space would
+        // then start recording a shortcut or flip a toggle the user never chose.
+        window.makeFirstResponder(nil)
     }
 
     var rootView: SettingsView {
