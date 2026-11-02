@@ -67,7 +67,10 @@ private final class Fixture {
     var settingsOpened = 0
     private(set) var controller: SearchPanelController!
 
-    init(items: [SearchItem] = [safari, fontBook, scanner, bluetooth, quitItem]) {
+    init(
+        items: [SearchItem] = [safari, fontBook, scanner, bluetooth, quitItem],
+        groups: [String: [SearchItem]] = [:]
+    ) {
         _ = NSApplication.shared
         controller = SearchPanelController(
             index: SearchIndex(items: items), settings: Settings(),
@@ -82,6 +85,7 @@ private final class Fixture {
             reportError: { [unowned self] in errors.append(String(describing: $0)) },
             ordersPanel: false)
         controller.announce = { [unowned self] in announcements.append($0) }
+        controller.replaceIndex(SearchIndex(items: items), groups: groups)
         controller.show()
     }
 
@@ -620,7 +624,8 @@ extension Fixture {
         id: "com.apple.SafariTechnologyPreview", kind: .app,
         title: "Safari Technology Preview", subtitle: nil,
         target: .openFile(URL(filePath: "/Applications/Safari Technology Preview.app")))
-    fixture.controller.index = SearchIndex(items: [safari, scanner, safariTechnologyPreview])
+    fixture.controller.replaceIndex(
+        SearchIndex(items: [safari, scanner, safariTechnologyPreview]), groups: [:])
 
     #expect(fixture.controller.query == "saf")
     #expect(fixture.titles == ["Safari", "Safari Technology Preview", "Microsoft Safety Scanner"])
@@ -1052,7 +1057,7 @@ extension Fixture {
     fixture.controller.hide()
     fixture.announcements = []
 
-    fixture.controller.index = SearchIndex(items: [fontBook])
+    fixture.controller.replaceIndex(SearchIndex(items: [fontBook]), groups: [:])
     fixture.controller.leadingItems = [quitItem]
     #expect(fixture.announcements.isEmpty)
 
@@ -1224,4 +1229,301 @@ extension Fixture {
     fixture.controller.hide()
 
     #expect(fixture.controller.panelCount == 2)
+}
+
+// MARK: Groups
+
+private func script(_ path: String, _ title: String) -> SearchItem {
+    SearchItem(
+        id: SearchItem.builtInID("commands/\(path)"), kind: .script, title: title, subtitle: nil,
+        target: .runScript(URL(fileURLWithPath: "/tmp/simple-spotlight-test/commands/\(path)")))
+}
+
+private func group(_ path: String, _ title: String) -> SearchItem {
+    let id = SearchItem.builtInID("commands/\(path)")
+    return SearchItem(id: id, kind: .group, title: title, subtitle: nil, target: .openGroup(id))
+}
+
+private let denon = group("Denon", "Denon")
+private let zones = group("Denon/Zones", "Zones")
+private let tv = script("Denon/tv.sh", "TV")
+private let game = script("Denon/game.sh", "Game")
+private let zoneTwo = script("Denon/Zones/zone2.sh", "Zone Two")
+private let denonGroups = [denon.id: [tv, game, zones], zones.id: [zoneTwo]]
+
+extension Fixture {
+    /// A fixture whose top level has Safari and the Denon group, which holds TV, Game and the
+    /// Zones group.
+    static func withGroups() -> Fixture {
+        Fixture(items: [safari, denon], groups: denonGroups)
+    }
+
+    /// Types `query` and presses Return, which opens the group it selects.
+    func enter(_ query: String) throws {
+        try type(query)
+        try press("\r", keyCode: 36)
+    }
+
+    func right() throws {
+        try press(functionKey(NSRightArrowFunctionKey), keyCode: 124, modifiers: arrowFlags)
+    }
+
+    func left() throws {
+        try press(functionKey(NSLeftArrowFunctionKey), keyCode: 123, modifiers: arrowFlags)
+    }
+
+    func tab() throws { try press("\t", keyCode: 48) }
+
+    func shiftTab() throws {
+        try press("\u{19}", characters: "\u{19}", modifiers: .shift, keyCode: 48)
+    }
+
+    func backspace() throws { try press("\u{7F}", keyCode: 51) }
+
+    func esc() throws { try press("\u{1B}", keyCode: 53) }
+
+    var caret: NSRange { get throws { try editor.selectedRange() } }
+}
+
+@MainActor @Test func returnOnAGroupOpensItInsteadOfRunningAnything() throws {
+    let fixture = Fixture.withGroups()
+
+    try fixture.enter("denon")
+
+    #expect(fixture.controller.isShown)
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+    #expect(fixture.opener.calls.isEmpty)
+    #expect(fixture.recorded.isEmpty)
+}
+
+@MainActor @Test func aGroupSearchesOnlyItsRows() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+
+    try fixture.type("a")
+
+    #expect(fixture.titles == ["Game"])
+}
+
+@MainActor @Test func tabOpensTheSelectedGroup() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("den")
+
+    try fixture.tab()
+
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+}
+
+@MainActor @Test func tabOnARowThatIsNotAGroupDoesNothing() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("saf")
+
+    try fixture.tab()
+
+    #expect(fixture.controller.query == "saf")
+    #expect(fixture.titles == ["Safari"])
+    #expect(fixture.opener.calls.isEmpty)
+}
+
+@MainActor @Test func rightArrowAtTheEndOfTheQueryOpensTheGroup() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("denon")
+
+    try fixture.right()
+
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+}
+
+@MainActor @Test func rightArrowInsideTheQueryMovesTheCursor() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("denon")
+    try fixture.editor.setSelectedRange(NSRange(location: 2, length: 0))
+
+    try fixture.right()
+
+    #expect(try fixture.caret == NSRange(location: 3, length: 0))
+    #expect(fixture.controller.query == "denon")
+    #expect(fixture.titles == ["Denon"])
+}
+
+@MainActor @Test func rightArrowWithTextSelectedMovesTheCursor() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("denon")
+    try fixture.editor.setSelectedRange(NSRange(location: 0, length: 5))
+
+    try fixture.right()
+
+    #expect(try fixture.caret == NSRange(location: 5, length: 0))
+    #expect(fixture.titles == ["Denon"])
+}
+
+@MainActor @Test func rightArrowOnARowThatIsNotAGroupMovesTheCursor() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.type("saf")
+    try fixture.editor.setSelectedRange(NSRange(location: 3, length: 0))
+
+    try fixture.right()
+
+    #expect(try fixture.caret == NSRange(location: 3, length: 0))
+    #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func shiftTabGoesUpALevelClearingTheQuery() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.enter("zones")
+    try fixture.type("two")
+    #expect(fixture.titles == ["Zone Two"])
+
+    try fixture.shiftTab()
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+
+    try fixture.shiftTab()
+    #expect(fixture.titles.isEmpty)
+
+    // At the top level it does nothing.
+    try fixture.type("saf")
+    try fixture.shiftTab()
+    #expect(fixture.controller.query == "saf")
+    #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func leftArrowAtTheStartGoesUpALevel() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.type("tv")
+    try fixture.editor.setSelectedRange(NSRange(location: 0, length: 0))
+
+    try fixture.left()
+
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles.isEmpty)
+    #expect(fixture.controller.isShown)
+}
+
+@MainActor @Test func leftArrowElsewhereMovesTheCursor() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.type("tv")
+
+    try fixture.left()
+    #expect(try fixture.caret == NSRange(location: 1, length: 0))
+    #expect(fixture.titles == ["TV"])
+
+    // With text selected from the start, the selection collapses rather than going up.
+    try fixture.editor.setSelectedRange(NSRange(location: 0, length: 2))
+    try fixture.left()
+    #expect(try fixture.caret == NSRange(location: 0, length: 0))
+    #expect(fixture.titles == ["TV"])
+}
+
+@MainActor @Test func backspaceOnAnEmptyQueryGoesUpALevel() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.type("t")
+    try fixture.editor.setSelectedRange(NSRange(location: 1, length: 0))
+
+    try fixture.backspace()
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+
+    try fixture.backspace()
+    #expect(fixture.titles.isEmpty)
+    #expect(fixture.controller.isShown)
+}
+
+@MainActor @Test func escClearsTheQueryThenGoesUpEachLevelThenHides() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.enter("zones")
+    try fixture.type("two")
+
+    try fixture.esc()
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles == ["Zone Two"])
+
+    try fixture.esc()
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+
+    try fixture.esc()
+    #expect(fixture.titles.isEmpty)
+    #expect(fixture.controller.isShown)
+
+    try fixture.esc()
+    #expect(!fixture.controller.isShown)
+}
+
+@MainActor @Test func hidingGoesBackToTheTopLevelKeepingTheQuery() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.type("saf")
+    #expect(fixture.titles.isEmpty)
+
+    fixture.controller.hide()
+    fixture.controller.show()
+
+    #expect(fixture.controller.query == "saf")
+    #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func problemsAndTheCalculatorShowOnlyAtTheTopLevel() throws {
+    let fixture = Fixture.withGroups()
+    let error = SearchItem(
+        id: "config-error", kind: .problem, title: "Config error: line 3", subtitle: nil,
+        target: .command("open-config"))
+    fixture.controller.leadingItems = [error]
+    try fixture.type("denon")
+    try fixture.down()
+    try fixture.press("\r", keyCode: 36)
+    #expect(fixture.titles == ["TV", "Game", "Zones"])
+
+    try fixture.type("2*3")
+
+    #expect(fixture.titles.isEmpty)
+}
+
+@MainActor @Test func aRebuildKeepsTheOpenGroupAndTheQuery() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.type("t")
+    let tuner = script("Denon/tuner.sh", "Tuner")
+
+    fixture.controller.replaceIndex(
+        SearchIndex(items: [safari, denon]), groups: [denon.id: [tv, game, tuner]])
+
+    #expect(fixture.controller.query == "t")
+    #expect(Set(fixture.titles) == ["TV", "Tuner"])
+}
+
+@MainActor @Test func aRebuildThatRemovesTheOpenGroupGoesToTheTopLevel() throws {
+    let fixture = Fixture.withGroups()
+    try fixture.enter("denon")
+    try fixture.enter("zones")
+    try fixture.type("t")
+
+    fixture.controller.replaceIndex(
+        SearchIndex(items: [safari, denon]), groups: [denon.id: [tv, game]])
+
+    #expect(fixture.controller.query.isEmpty)
+    #expect(fixture.titles.isEmpty)
+    try fixture.type("saf")
+    #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func everyPanelShowsTheSameGroup() throws {
+    let fixture = Fixture.withGroups()
+    fixture.show(on: [tall, otherTall])
+    try fixture.type("denon")
+    #expect(fixture.shown.map(\.field.stringValue) == ["denon", "denon"])
+
+    try fixture.press("\r", keyCode: 36)
+
+    #expect(fixture.shown.map(\.field.stringValue) == ["", ""])
+    #expect(
+        fixture.shown.map(\.frame.height) == Array(repeating: SearchPanel.height(rows: 3), count: 2)
+    )
 }

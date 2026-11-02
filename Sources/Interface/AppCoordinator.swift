@@ -312,7 +312,7 @@ public final class AppCoordinator {
         // An app may have a new icon since the last build.
         icons.forgetAll()
         indexProblems = build.problems
-        panel.index = SearchIndex(items: build.items + commands.items)
+        panel.replaceIndex(SearchIndex(items: build.items + commands.items), groups: build.groups)
         showProblems()
     }
 
