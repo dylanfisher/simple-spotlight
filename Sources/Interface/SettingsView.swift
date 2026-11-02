@@ -25,6 +25,8 @@ struct SettingsView: View {
             }
             .disabled(model.isFileBroken)
             file
+            shortcut
+                .disabled(model.isFileBroken)
             Section {
                 Button(quitTitle, action: quit)
             }
@@ -59,38 +61,12 @@ struct SettingsView: View {
 
     private var general: some View {
         Section {
-            LabeledContent("Shortcut") {
-                RecorderButton(recorder: model.recorder, chord: model.settings.hotkey)
-            }
-            if let refusal = model.recorder.refusal, model.recorder.isRecording {
-                Text(refusal)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            if let conflict = model.hotKeyConflict, conflict.chord == model.settings.hotkey {
-                conflictRow(conflict)
-            }
             Toggle("Open at login", isOn: binding(\.launchAtLogin))
             Toggle(isOn: binding(\.showOnAllDisplays)) {
                 Text("Show on all displays")
                 Text("Typing goes to the display you're working on.")
             }
         }
-    }
-
-    private func conflictRow(_ conflict: SettingsModel.Conflict) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Label(conflict.title, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Spacer()
-            if conflict.isSystemShortcut {
-                Button("Open Keyboard Shortcuts", action: model.openKeyboardShortcuts)
-            } else {
-                Text("Record another shortcut.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .font(.callout)
     }
 
     private var results: some View {
@@ -158,6 +134,38 @@ struct SettingsView: View {
             Text("Changes here are saved to the file, and edits to the file show here.")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// The hotkey's recorder, with why a chord was refused or the hotkey couldn't be registered.
+    private var shortcut: some View {
+        Section {
+            LabeledContent("Shortcut") {
+                RecorderButton(recorder: model.recorder, chord: model.settings.hotkey)
+            }
+            if let refusal = model.recorder.refusal, model.recorder.isRecording {
+                Text(refusal)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            if let conflict = model.hotKeyConflict, conflict.chord == model.settings.hotkey {
+                conflictRow(conflict)
+            }
+        }
+    }
+
+    private func conflictRow(_ conflict: SettingsModel.Conflict) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Label(conflict.title, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Spacer()
+            if conflict.isSystemShortcut {
+                Button("Open Keyboard Shortcuts", action: model.openKeyboardShortcuts)
+            } else {
+                Text("Record another shortcut.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.callout)
     }
 
     // MARK: Parts
