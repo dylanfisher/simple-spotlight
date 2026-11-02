@@ -24,6 +24,13 @@ private func parse(_ text: String, file: String = "tv.sh") -> ScriptHeader {
     #expect(header.errors.isEmpty)
 }
 
+/// A group's `_group` header defaults to its folder's name, whose dots aren't an extension.
+@Test func missingTitleCanBeAGivenDefaultKeptWhole() {
+    let header = ScriptHeader.parse(Array("# @subtitle Upstairs\n".utf8), defaultTitle: "Hi-Fi 2.0")
+    #expect(header.title == "Hi-Fi 2.0")
+    #expect(header.subtitle == "Upstairs")
+}
+
 @Test func readsBothCommentStyles() {
     let header = parse("// @title Slash\n//@subtitle Tight\n#@keywords a b\n")
     #expect(header.title == "Slash")

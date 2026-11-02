@@ -16,7 +16,7 @@ public struct ScriptHeader: Equatable, Sendable {
     /// A caller can read just this much of a file. A line the limit cuts through is dropped.
     public static let readLimit = 4096
 
-    /// `@title`, or the file name without its extension.
+    /// `@title`, or the default title `parse` was given.
     public let title: String
     public let subtitle: String?
     /// The words of `@keywords`.
@@ -24,8 +24,14 @@ public struct ScriptHeader: Equatable, Sendable {
     public let isTopLevel: Bool
     public let errors: [Problem]
 
-    /// The header in the start of `bytes`, a file's content. `fileName` gives the default title.
+    /// The header in the start of `bytes`, a file's content. The title defaults to `fileName`
+    /// without its extension.
     public static func parse(_ bytes: [UInt8], fileName: String) -> ScriptHeader {
+        parse(bytes, defaultTitle: (fileName as NSString).deletingPathExtension)
+    }
+
+    /// The header in the start of `bytes`, with `defaultTitle` as the title when it has none.
+    public static func parse(_ bytes: [UInt8], defaultTitle: String) -> ScriptHeader {
         let cutShort = bytes.count > readLimit
         // Split on bytes: Swift reads "\r\n" as one Character, which a "\n" split would miss.
         var lines = bytes.prefix(readLimit)
@@ -76,7 +82,7 @@ public struct ScriptHeader: Equatable, Sendable {
         }
 
         return ScriptHeader(
-            title: title ?? (fileName as NSString).deletingPathExtension,
+            title: title ?? defaultTitle,
             subtitle: subtitle, keywords: keywords ?? [], isTopLevel: isTopLevel, errors: errors)
     }
 
