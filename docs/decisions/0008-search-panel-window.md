@@ -45,10 +45,12 @@ Searcher's palette (its 0087) solved the look and the key handling for a similar
 - **The field is AppKit; the rows are SwiftUI.** An `NSTextField` gets the keys from
   `makeFirstResponder` in the same pass as the show, and its editor's commands (`moveUp:`,
   `moveDown:` with their Ctrl-P/Ctrl-N bindings, `insertNewline:`, `cancelOperation:`) arrive
-  through its delegate. Tab and Shift-Tab do nothing, since the field is the only control and
-  tabbing would select its text again. The rows (`SearchView`, `ResultRow`) are SwiftUI in an
-  `NSHostingView`, observing a `SearchState` the controller sets. The hosting view never accepts
-  first responder, so a click between rows leaves the keys in the field.
+  through its delegate. Tab opens the selected group and Shift-Tab goes up a level; on any other
+  row Tab does nothing, since the field is the only control and tabbing would select its text
+  again. The keys are listed at `SearchPanelController.control(_:textView:doCommandBy:)`. The
+  rows (`SearchView`, `ResultRow`) are SwiftUI in an `NSHostingView`, observing a `SearchState`
+  the controller sets. The hosting view never accepts first responder, so a click between rows
+  leaves the keys in the field.
 - **Command chords in the panel.** With no menu bar, no Command chord reaches anything unless the
   key window takes it, so `SearchPanel.performKeyEquivalent` offers each to the controller first:
   ⌘Return (and ⌘ keypad Enter), ⌘1…⌘9, ⌘, and ⌘Q, plus ⌘X, ⌘C, ⌘V and ⌘A for the field, which
