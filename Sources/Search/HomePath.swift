@@ -5,6 +5,9 @@ public enum HomePath {
     /// This user's home folder: the default wherever a home folder can be passed in.
     public static var current: URL { FileManager.default.homeDirectoryForCurrentUser }
 
+    /// The folder the config file lives in.
+    static let config = "~/.config/\(AppSlug.value)"
+
     /// What `isValid` accepts, in words, for the config file's comments and errors.
     static let accepted = "a full path, ~, or a path that starts with ~/"
 
