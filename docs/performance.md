@@ -8,7 +8,7 @@ budgets every change is measured against. The budget is the p95 of the runs, on 
 | B1 | Hotkey pressed → panel visible with the field focused | 50 ms |
 | B2 | Keystroke → results list updated | 16 ms |
 | B3 | Cold launch → hotkey ready | 300 ms |
-| B4 | Full index build (apps and System Settings panes) | 200 ms, off the main thread |
+| B4 | Full index build (apps, System Settings panes and the commands folder) | 200 ms, off the main thread |
 | B5 | Resident memory, idle, panel hidden | 40 MB |
 
 The index is built at launch and kept in memory; a keystroke searches it and never touches the
@@ -60,3 +60,10 @@ none. Write `/usr/bin/log`, since zsh's `log` is a builtin.
 | B3 | 300 ms | `launched` → hotkey registered 10–29 ms. `open` → registered median 127, p95 138 ms (49 launches). The first launch of a newly signed build took 233–322 ms (5 launches), all of the extra before the app's code runs. |
 | B4 | 200 ms | 32–41 ms, median 34 ms (49 launches). |
 | B5 | 40 MB | 18–19 MB. |
+
+Script commands (decision 0017), measured separately from the table above:
+
+- **B4** with 50 scripts in 5 groups in the commands folder: median about 35 ms, the same
+  from two independent measurements.
+- **B2** inside a group of 50 scripts, median about
+  0.5–2.4 ms and max about 6.5 ms in a debug build.
