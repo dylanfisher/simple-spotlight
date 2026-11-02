@@ -54,7 +54,7 @@ private let file = URL(filePath: "/tmp/simple-spotlight-test/config.json")
 
     let row = try #require(ProblemItems.index(problems))
 
-    #expect(row.title == "Couldn't search 2 folders or apps")
+    #expect(row.title == "Couldn't search 2 folders, apps or scripts")
     #expect(row.subtitle == "/Applications/A.app: It isn't a property list. · Return copies all 2")
     #expect(
         row.target

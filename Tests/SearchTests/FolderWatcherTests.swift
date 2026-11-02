@@ -52,6 +52,20 @@ private func called(_ calls: Calls, within limit: Duration = .seconds(10)) async
     #expect(await called(calls))
 }
 
+/// A group of script commands is a subfolder of the watched commands folder.
+@Test func reportsAChangeInASubfolder() async throws {
+    let folder = try TempFolder()
+    let nested = folder.url.appendingPathComponent("Living Room/Inputs")
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    let calls = Calls()
+    let watcher = try FolderWatcher(paths: [folder.url.path], latency: .milliseconds(50)) {
+        calls.record()
+    }
+    defer { watcher.stop() }
+    try Data("x".utf8).write(to: nested.appendingPathComponent("tv.sh"))
+    #expect(await called(calls))
+}
+
 /// Proving no callback comes needs a wait; a second watcher started before the stopped one's
 /// changes is waited on twice, which gives the stopped one's queue at least as long.
 @Test func reportsNothingOnceStopped() async throws {

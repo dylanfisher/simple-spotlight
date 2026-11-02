@@ -16,6 +16,7 @@ private final class StubOpener: ResultOpener {
     func openApplication(at url: URL) { opened.append(url) }
     func open(_ url: URL) { opened.append(url) }
     func reveal(_ url: URL) {}
+    func run(_ url: URL) {}
     func copy(_ text: String) { copied.append(text) }
     func clipboardText() -> String? { nil }
 }
@@ -66,10 +67,14 @@ private final class BuildRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [Search.Settings] = []
     let items: [SearchItem]
+    let groups: [String: [SearchItem]]
     let problems: [IndexProblem]
 
-    init(items: [SearchItem], problems: [IndexProblem] = []) {
+    init(
+        items: [SearchItem], groups: [String: [SearchItem]] = [:], problems: [IndexProblem] = []
+    ) {
         self.items = items
+        self.groups = groups
         self.problems = problems
     }
 
@@ -77,7 +82,8 @@ private final class BuildRecorder: @unchecked Sendable {
 
     func build(_ settings: Search.Settings) -> IndexBuilder.Build {
         lock.withLock { recorded.append(settings) }
-        return IndexBuilder.Build(items: items, problems: problems, duration: .zero)
+        return IndexBuilder.Build(
+            items: items, groups: groups, problems: problems, duration: .zero)
     }
 }
 
@@ -144,11 +150,12 @@ private final class Fixture {
     ///     nil.
     ///   - buildIndex: Builds the index; the recorder's build when nil.
     init(
-        items: [SearchItem] = [safari], problems: [IndexProblem] = [], state: URL? = nil,
+        items: [SearchItem] = [safari], groups: [String: [SearchItem]] = [:],
+        problems: [IndexProblem] = [], state: URL? = nil,
         buildIndex: AppCoordinator.BuildIndex? = nil
     ) {
         _ = NSApplication.shared
-        recorder = BuildRecorder(items: items, problems: problems)
+        recorder = BuildRecorder(items: items, groups: groups, problems: problems)
         let recorder = recorder
         let config = config
         stateFolder =
@@ -594,6 +601,29 @@ private let maps = SearchItem(
     #expect(fixture.recorder.builds.count == 2)
     #expect(fixture.panel.query == "saf")
     #expect(fixture.titles == ["Safari"])
+}
+
+@MainActor @Test func aRebuildKeepsTheGroupOpenWithItsRows() async throws {
+    let denonID = SearchItem.builtInID("commands/Denon")
+    let denon = SearchItem(
+        id: denonID, kind: .group, title: "Denon", subtitle: nil, target: .openGroup(denonID))
+    let tv = SearchItem(
+        id: SearchItem.builtInID("commands/Denon/tv.sh"), kind: .script, title: "TV",
+        subtitle: nil,
+        target: .runScript(URL(fileURLWithPath: "/tmp/simple-spotlight-test/commands/tv.sh")))
+    let fixture = Fixture(items: [safari, denon], groups: [denonID: [tv]])
+    await fixture.apply(Search.Settings())
+    try #require(fixture.panel.groups.keys.sorted() == [denonID])
+    try fixture.type("denon")
+    try fixture.pressReturn()
+    #expect(fixture.titles == ["TV"])
+
+    let onChange = try #require(fixture.watch.onChange)
+    onChange()
+    await fixture.coordinator.indexBuild?.value
+
+    #expect(fixture.recorder.builds.count == 2)
+    #expect(fixture.titles == ["TV"])
 }
 
 @MainActor @Test func watchesTheIndexFoldersAgainOnlyWhenAnIndexedKeyChanges() async {

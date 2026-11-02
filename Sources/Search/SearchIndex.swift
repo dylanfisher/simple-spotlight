@@ -6,26 +6,35 @@ public struct SearchIndex: Sendable {
     /// One ranked match.
     public struct Result: Sendable {
         public let item: SearchItem
-        /// The better of the title's and the alternate names' scores.
-        public let score: FuzzyMatch.Score
+        /// The better of the title's and the alternate names' scores; nil when an empty query
+        /// listed the item.
+        public let score: FuzzyMatch.Score?
         /// The matched characters of the title; empty when an alternate name matched better.
         public let ranges: [Range<String.Index>]
     }
 
     public let items: [SearchItem]
+    /// Whether an empty query lists every item, as inside a group of script commands. At the
+    /// top level it matches nothing, so the panel starts empty.
+    public let listsAllForEmptyQuery: Bool
 
-    public init(items: [SearchItem]) {
+    public init(items: [SearchItem], listsAllForEmptyQuery: Bool = false) {
         self.items = items
+        self.listsAllForEmptyQuery = listsAllForEmptyQuery
     }
 
-    /// The `limit` best matches for `query`, best first. An empty query matches nothing.
+    /// The `limit` best matches for `query`, best first. An empty query matches nothing, or with
+    /// `listsAllForEmptyQuery` lists the first `limit` items by frecency, ties in `items` order.
     ///
     /// `usage` gives each item's frecency and its picks for the query; `precedes` says where
     /// they count.
     public func results(for query: String, limit: Int, usage: UsageBoost = .none) -> [Result] {
         precondition(limit >= 0, "a negative limit \(limit)")
         let matcherQuery = FuzzyMatch.Query(query)
-        guard limit > 0, !matcherQuery.isEmpty else { return [] }
+        guard limit > 0 else { return [] }
+        guard !matcherQuery.isEmpty else {
+            return listsAllForEmptyQuery ? listing(limit: limit, usage: usage) : []
+        }
         let learned = usage.learned(for: query)
         // Kept sorted best first. A binary insertion into at most `limit` entries is cheaper than
         // sorting every match when a short query matches most items.
@@ -55,6 +64,16 @@ public struct SearchIndex: Sendable {
             }
             return Result(item: item, score: ranked.score, ranges: match.ranges)
         }
+    }
+
+    /// The first `limit` items by frecency, the most used first. Ties keep their order in
+    /// `items`.
+    private func listing(limit: Int, usage: UsageBoost) -> [Result] {
+        let frecencies = items.map { usage.frecency(of: $0.id) }
+        return items.indices
+            .sorted { frecencies[$0] != frecencies[$1] ? frecencies[$0] > frecencies[$1] : $0 < $1 }
+            .prefix(limit)
+            .map { Result(item: items[$0], score: nil, ranges: []) }
     }
 
     /// A scored item, before its ranges are worked out.

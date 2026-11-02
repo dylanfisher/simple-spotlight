@@ -51,6 +51,62 @@ that first, in
 `~/Library/Application Support/simple-spotlight/usage.json`, and the hotkey conflicts it has
 told you about in `state.json` beside it. Deleting either resets it.
 
+## Your own commands
+
+Each executable file in `~/.config/simple-spotlight/commands/` is a row in the panel, and Return
+runs it. Each subfolder is a group: opening it searches only the commands inside. Set
+`"scriptCommands": false` to turn the feature off. The folder shows up in the index about a
+second after you add or edit a file.
+
+A script describes itself in `#` or `//` comment lines before its first other line:
+`@title` (default: the file name without its extension), `@subtitle`, `@keywords` (words that
+also find it) and `@top-level` (also show a command from inside a group at the top level, with
+the group's title as its subtitle). A group takes the same tags from a file named `_group` in
+its folder, which is never run. A mistake in a header, or a file that isn't executable
+(`chmod +x` it), shows as a row at the top of the panel naming the file. Names starting with `.`
+or `_` are skipped, so `_denon.sh` below stays out of the panel.
+
+An example that switches a Denon receiver's input over telnet. The shared file holds the address
+and a `send` function:
+
+```sh
+# commands/Denon/_denon.sh
+host=192.0.2.10   # your receiver's IP address
+
+send() {
+  printf '%s\r' "$1" | /usr/bin/nc -G 2 -w 1 "$host" 23 \
+    || { echo "couldn't reach the receiver at $host" >&2; exit 1; }
+}
+```
+
+```sh
+#!/bin/sh
+# commands/Denon/game.sh
+# @title Game
+# @keywords input console
+. "$(dirname "$0")/_denon.sh"
+send SIGAME
+```
+
+```
+# commands/Denon/_group
+# @title Denon
+# @keywords receiver avr
+```
+
+A script runs in its own folder with no input, and with the PATH that launchd gives an app,
+`/usr/bin:/bin:/usr/sbin:/sbin`, not your shell's: use absolute paths for anything else. Its
+output is dropped. If it exits with an error, a notice shows the exit code and the end of its
+stderr, which is why the example says what went wrong there. After 10 seconds it is stopped and
+you are told.
+
+In the panel, Tab or Return on a group row opens the group, and so does → when the cursor is at
+the end of the query. Shift-Tab goes up a level, as do ← at the start of the query and
+Backspace on an empty one. Esc clears the query, then goes up a level, then hides the panel. The
+groups you are in show at the left of the field, and clicking them goes up a level. Going up
+returns to what you had typed there, with the group's row selected. Hiding the panel inside a
+group goes all the way up the same way.
+
 ## Develop
 
 Needs Swift 6.2 or later (Command Line Tools or Xcode).

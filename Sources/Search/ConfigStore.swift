@@ -59,7 +59,7 @@ public actor ConfigStore {
     public static func standardFolder(
         home: URL = HomePath.current
     ) -> URL {
-        HomePath.folder("~/.config/\(AppSlug.value)", home: home)
+        HomePath.folder(HomePath.config, home: home)
     }
 
     public nonisolated let folder: URL

@@ -20,5 +20,5 @@ xcuserdata/
 # Local scratch — the build plan, progress notes, audits
 tmp/
 
-# Built app for copying to another Mac (README)
+# Built apps, such as the universal build for another Mac
 dist/

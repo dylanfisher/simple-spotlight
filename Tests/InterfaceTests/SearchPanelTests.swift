@@ -124,3 +124,54 @@ private func flagsChanged(_ flags: NSEvent.ModifierFlags, in panel: SearchPanel)
     #expect(panel.gear.accessibilityLabel() == "Settings")
     #expect(panel.gear.toolTip == "Settings (⌘,)")
 }
+
+@MainActor @Test func theBreadcrumbShowsEachGroupOpenAndMakesRoomForItself() {
+    let panel = SearchPanel()
+    panel.install(rows: NSView())
+    #expect(panel.breadcrumb.isHidden)
+    let fullField = panel.field.frame
+
+    panel.showPath(["Living Room"])
+    #expect(!panel.breadcrumb.isHidden)
+    #expect(panel.breadcrumb.title == "Living Room ›")
+    #expect(panel.field.frame.minX > panel.breadcrumb.frame.maxX)
+    #expect(panel.field.frame.maxX == fullField.maxX)
+    #expect(panel.breadcrumb.frame.midY == panel.field.frame.midY)
+
+    panel.showPath(["Living Room", "Zones"])
+    #expect(panel.breadcrumb.title == "Living Room › Zones ›")
+    #expect(panel.field.frame.minX > panel.breadcrumb.frame.maxX)
+
+    panel.showPath([])
+    #expect(panel.breadcrumb.isHidden)
+    #expect(panel.field.frame == fullField)
+}
+
+/// A long path keeps the field room to type in; the breadcrumb cuts its start, so the group
+/// open now still shows.
+@MainActor @Test func aLongBreadcrumbLeavesTheFieldRoom() {
+    let panel = SearchPanel()
+    panel.install(rows: NSView())
+
+    panel.showPath(Array(repeating: "A Group With A Long Name", count: 6))
+
+    #expect(panel.field.frame.width >= SearchPanel.width / 2)
+}
+
+@MainActor @Test func aClickOnTheBreadcrumbGoesUpAndVoiceOverReadsItAsAButton() throws {
+    let panel = SearchPanel()
+    panel.install(rows: NSView())
+    var wentUp = 0
+    panel.goUp = { wentUp += 1 }
+
+    panel.showPath(["Living Room", "Zones"])
+    panel.breadcrumb.performClick(nil)
+
+    #expect(wentUp == 1)
+    // A button's cell is the element VoiceOver reads.
+    let cell = try #require(panel.breadcrumb.cell)
+    #expect(cell.accessibilityRole() == .button)
+    #expect(cell.accessibilityLabel() == "Living Room, Zones")
+    #expect(panel.breadcrumb.toolTip == "Go up a level (⇧⇥)")
+    #expect(panel.breadcrumb.refusesFirstResponder)
+}

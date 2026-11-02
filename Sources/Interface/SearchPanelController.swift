@@ -7,7 +7,11 @@ import SwiftUI
 /// opens, ⌘Return reveals in Finder, ⌘1…⌘9 open a row, ⌘C copies the field's selected text or
 /// else the selected row's path, URL or answer, Esc clears then hides, ⌘, opens Settings, as the
 /// gear does that Option shows, and ⌘Q quits, whatever the keyboard layout
-/// (docs/decisions/0008-search-panel-window.md).
+/// (docs/decisions/0008-search-panel-window.md). The keys the field's editor sends are listed
+/// at `control(_:textView:doCommandBy:)`.
+///
+/// Opening a group's row searches only that group's rows until the panel goes back up a level.
+/// Hiding goes back to the top level.
 ///
 /// With `showOnAllDisplays` it shows a panel on every display, all with the same query, rows and
 /// selection; one takes the keys (docs/decisions/0013-all-displays.md).
@@ -16,13 +20,13 @@ import SwiftUI
 /// hop off it would cost more than the search.
 @MainActor
 public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindowDelegate {
-    /// The items searched. Setting it searches again, keeping the query and the selected item.
-    public var index: SearchIndex {
-        didSet { search(keepingSelection: true) }
-    }
+    /// The top level's items, searched outside a group. `replaceIndex(_:groups:)` sets it.
+    public private(set) var index: SearchIndex
+    /// Each group's rows, keyed by the group's id, as `IndexBuilder.Build.groups` holds them.
+    public private(set) var groups: [String: [SearchItem]] = [:]
     /// Read for `maxResults`, `calculator`, `dimUnused`, `dimAfterDays` and `showOnAllDisplays`.
-    /// Changing any but `showOnAllDisplays` searches again, as setting `index` does; searching
-    /// happens only while the panel shows. The next show reads `showOnAllDisplays`.
+    /// Changing any but `showOnAllDisplays` searches again, as `replaceIndex(_:groups:)` does;
+    /// searching happens only while the panel shows. The next show reads `showOnAllDisplays`.
     public var settings: Search.Settings {
         didSet {
             if settings.showOnAllDisplays, !oldValue.showOnAllDisplays {
@@ -51,7 +55,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         didSet { search(keepingSelection: true) }
     }
     /// What the user has opened, which ranks the results (docs/decisions/0010-usage-ranking.md).
-    /// Setting it searches again, as setting `index` does.
+    /// Setting it searches again, as `replaceIndex(_:groups:)` does.
     public var usage = UsageStore.Usage() {
         didSet {
             // Showing works the frecencies out, for the time it shows.
@@ -61,6 +65,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         }
     }
     public private(set) var isShown = false
+    /// The groups opened, outermost first; empty at the top level. Every panel's breadcrumb
+    /// shows their titles.
+    private(set) var path: [OpenGroup] = [] {
+        didSet {
+            let titles = path.map(\.row.title)
+            for slot in slots { slot.panel.showPath(titles) }
+        }
+    }
     /// The text in the field, kept while the panel is hidden.
     public var query: String { panel.field.stringValue }
 
@@ -79,8 +91,17 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     var rowsViews: [ResultListHostingView] { slots.map(\.rows) }
     let state = SearchState()
     let icons: IconCache
-    /// Speaks to VoiceOver: the results after each search, the row selected after each move.
+    /// Speaks to VoiceOver: the results after each search, the row selected after each move,
+    /// the group entered or the level gone up to.
     var announce: @MainActor (String) -> Void = SearchPanelController.postAnnouncement
+    /// A group opened: the row it was opened from, its rows, searched in place of `index`, and
+    /// the query the level it was opened from showed, which going up puts back.
+    struct OpenGroup {
+        let row: SearchItem
+        let index: SearchIndex
+        let parentQuery: String
+    }
+
     /// A panel with its rows, and the visible area of the screen it last showed on, where its
     /// rows stop; nil before its first show.
     private struct Slot {
@@ -128,6 +149,7 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     private let ordersPanel: Bool
 
     /// - Parameters:
+    ///   - groups: The rows of each group, as `replaceIndex(_:groups:)` takes them.
     ///   - configFile: Gives the config file, creating the default one if it's missing, as
     ///     `ConfigStore.makeDefaultFileIfMissing` does.
     ///   - openSettings: Opens the settings window, on ⌘, or a click of the gear.
@@ -140,7 +162,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     ///   - ordersPanel: Whether showing puts the panel on screen. Tests pass false, so the panel
     ///     takes the keys in code but never shows or takes focus.
     public init(
-        index: SearchIndex, settings: Search.Settings, calculator: CalculatorProvider,
+        index: SearchIndex, groups: [String: [SearchItem]], settings: Search.Settings,
+        calculator: CalculatorProvider,
         opener: any ResultOpener, icons: IconCache,
         configFile: @escaping @MainActor () async -> Result<URL, ConfigError>,
         openSettings: @escaping @MainActor () -> Void,
@@ -151,7 +174,9 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         reportError: @escaping @MainActor (any Error) -> Void,
         ordersPanel: Bool = true
     ) {
+        Self.requireRows(for: index, groups: groups)
         self.index = index
+        self.groups = groups
         self.settings = settings
         self.calculator = calculator
         self.opener = opener
@@ -184,6 +209,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         panel.keyEquivalent = { [weak self] in self?.keyEquivalent($0) ?? false }
         panel.willTakeKeys = { [weak self] in self?.takeKeys(in: $0) }
         panel.openSettings = { [weak self] in self?.showSettings() }
+        panel.goUp = { [weak self] in self?.leaveGroup() }
+        panel.showPath(path.map(\.row.title))
         return Slot(panel: panel, rows: rows)
     }
 
@@ -321,9 +348,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         if settings.showOnAllDisplays { schedulePrepare() }
     }
 
-    /// Hides every panel, keeping the query for the next show.
+    /// Hides every panel, keeping the query for the next show. Inside a group it first goes up
+    /// to the top level as leaving each group would, so the next show starts there.
     public func hide() {
         guard isShown else { return }
+        if let outermost = path.first {
+            path = []
+            restore(from: outermost)
+        }
         isShown = false
         let shown = shownPanels
         shownCount = 0
@@ -361,22 +393,121 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 
     // MARK: Searching
 
+    /// Searches `index` at the top level and `groups` inside a group from now on, and again now,
+    /// keeping the query and the selected item. The groups open stay open while they are all
+    /// still there; otherwise the panel goes up to the deepest level that is, with that level's
+    /// query put back. Every group row in `index` and in `groups` must have an entry in
+    /// `groups`; one without is a programming error, so this stops.
+    public func replaceIndex(_ index: SearchIndex, groups: [String: [SearchItem]]) {
+        Self.requireRows(for: index, groups: groups)
+        self.index = index
+        self.groups = groups
+        reopenPath()
+        search(keepingSelection: true)
+    }
+
+    /// Opens the groups in `path` again from `index` and `groups`. When one is gone, goes up to
+    /// the level above the first that is, as leaving it would. Each group's row is looked up
+    /// where it was opened from, so a changed title shows.
+    private func reopenPath() {
+        guard !path.isEmpty else { return }
+        var reopened: [OpenGroup] = []
+        var rows = index.items
+        for open in path {
+            guard let row = rows.first(where: { $0.id == open.row.id }),
+                let id = row.groupID, let children = groups[id]
+            else {
+                path = reopened
+                restore(from: open)
+                return
+            }
+            reopened.append(
+                OpenGroup(
+                    row: row, index: Self.groupIndex(children), parentQuery: open.parentQuery))
+            rows = children
+        }
+        path = reopened
+    }
+
+    /// Stops unless every group row in `index` and in `groups` has an entry in `groups`, so that
+    /// opening a row never finds its group missing.
+    private static func requireRows(for index: SearchIndex, groups: [String: [SearchItem]]) {
+        let rows = index.items + groups.values.joined()
+        for id in rows.compactMap(\.groupID) {
+            precondition(groups[id] != nil, "no rows for the group \(id)")
+        }
+    }
+
+    /// The index of a group's rows, which an empty query lists.
+    private static func groupIndex(_ rows: [SearchItem]) -> SearchIndex {
+        SearchIndex(items: rows, listsAllForEmptyQuery: true)
+    }
+
+    /// Searches the rows of the group `row` opens, with an empty query, and says the group's
+    /// title and how many rows it has, "Living Room, 4 commands". `replaceIndex` has checked that
+    /// the group has rows.
+    private func openGroup(_ row: SearchItem, id: String) {
+        let rows = groups[id]!
+        path.append(OpenGroup(row: row, index: Self.groupIndex(rows), parentQuery: query))
+        panel.field.stringValue = ""
+        search(announcing: false)
+        announce("\(row.title), \(Self.commandCount(rows.count))")
+    }
+
+    /// Goes up from the innermost group open to its parent, or the top level, with the query
+    /// and the selected row it had when the group was opened, and says where the panel is now:
+    /// the parent's title, or at the top level the field's name. Returns false, changing
+    /// nothing, at the top level.
+    @discardableResult
+    private func leaveGroup() -> Bool {
+        guard let left = path.popLast() else { return false }
+        restore(from: left)
+        announce(path.last?.row.title ?? SearchPanel.searchLabel)
+        return true
+    }
+
+    /// Puts back the level `left` was opened from, which is now the innermost: its query with
+    /// the caret at the end, and the row `left` was opened from selected, if it is still there.
+    private func restore(from left: OpenGroup) {
+        panel.field.stringValue = left.parentQuery
+        panel.field.currentEditor()?.selectedRange = NSRange(
+            location: left.parentQuery.utf16.count, length: 0)
+        search(selecting: left.row.id, announcing: false)
+    }
+
+    /// "1 command" or "4 commands": how many rows a group has, a nested group's row counting
+    /// as one.
+    private nonisolated static func commandCount(_ count: Int) -> String {
+        count == 1 ? "1 command" : "\(count) commands"
+    }
+
     /// Fills the rows for the query: the leading items, the calculator's row, then the index's
-    /// best matches, `maxResults` in all. The first row is selected, or with `keepingSelection`
-    /// the row of the item selected before, if it is still there. Does nothing while the panel
-    /// is hidden: showing searches, and a search no one sees would still be announced. Moving
-    /// the keys searches again without `announcing`, as VoiceOver has said the results.
-    private func search(keepingSelection: Bool = false, announcing: Bool = true) {
+    /// best matches, `maxResults` in all; inside a group, only the group's best matches. The
+    /// first row is selected, or with `keepingSelection` the row of the item selected before, or
+    /// with `selecting` the row of the item with that id, if it is still there. Does nothing
+    /// while the panel is hidden: showing searches, and a search no one sees would still be
+    /// announced. Moving the keys searches again without `announcing`, as VoiceOver has said the
+    /// results.
+    private func search(
+        keepingSelection: Bool = false, selecting id: String? = nil, announcing: Bool = true
+    ) {
         guard isShown else { return }
         let query = query
-        let kept = keepingSelection ? selectedRow?.item.id : nil
-        var rows = leadingItems.map { row($0, ranges: []) }
-        if settings.calculator, let item = calculator.item(for: query) {
-            rows.append(row(item, ranges: []))
+        let kept = id ?? (keepingSelection ? selectedRow?.item.id : nil)
+        var rows: [SearchState.Row] = []
+        let searched: SearchIndex
+        if let group = path.last {
+            searched = group.index
+        } else {
+            searched = index
+            rows = leadingItems.map { row($0, ranges: []) }
+            if settings.calculator, let item = calculator.item(for: query) {
+                rows.append(row(item, ranges: []))
+            }
         }
         let limit = min(settings.maxResults, rowsThatFit(slots[keyIndex]))
         let room = max(limit - rows.count, 0)
-        rows += index.results(for: query, limit: room, usage: boost).map {
+        rows += searched.results(for: query, limit: room, usage: boost).map {
             row($0.item, ranges: $0.ranges)
         }
         rows = Array(rows.prefix(limit))
@@ -438,11 +569,16 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     // MARK: Opening
 
     /// Hides the panel and opens the row at `index`: launches an app, opens a pane, copies a
-    /// calculator answer or runs a command. An index past the rows does nothing. Only apps and
-    /// panes count toward usage (docs/decisions/0010-usage-ranking.md).
+    /// calculator answer, runs a command or runs a script. A group's row opens the group instead,
+    /// and the panel stays. An index past the rows does nothing. Only apps, panes and scripts
+    /// count toward usage (docs/decisions/0010-usage-ranking.md).
     func open(row index: Int) {
         guard state.rows.indices.contains(index) else { return }
         let item = state.rows[index].item
+        if let id = item.groupID {
+            openGroup(item, id: id)
+            return
+        }
         hide()
         if item.kind.countsAsOpen { recordOpen(item.id, query) }
         switch item.target {
@@ -454,6 +590,10 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             opener.copy(text)
         case .command(let id):
             runCommand(id)
+        case .runScript(let url):
+            opener.run(url)
+        case .openGroup:
+            return
         }
     }
 
@@ -562,11 +702,11 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     }
 
     /// What ⌘C copies from `item`'s row: an app's path, a pane's `x-apple.systempreferences:` URL
-    /// or a `.prefPane`'s path, a calculator answer as Return copies it. Nil for a command or a
-    /// problem.
+    /// or a `.prefPane`'s path, a calculator answer as Return copies it. Nil for a command, a
+    /// script, a group or a problem.
     private static func copiedText(for item: SearchItem) -> String? {
         switch (item.kind, item.target) {
-        case (.command, _), (.problem, _), (_, .command):
+        case (.command, _), (.problem, _), (_, .command), (_, .runScript), (_, .openGroup):
             return nil
         case (_, .openFile(let url)):
             return url.path
@@ -599,8 +739,14 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
         search()
     }
 
-    /// The keys the field's editor turns into commands: the arrows and Ctrl-N/P move, Return
-    /// opens, Esc clears or hides. Every other command edits the text as usual.
+    /// Whether the selected row is a group's, which Tab and → open.
+    private var selectsGroup: Bool { selectedRow?.item.groupID != nil }
+
+    /// The keys the field's editor turns into commands: ↓, ↑ and Ctrl-N/P move, Return opens,
+    /// Tab opens a group, Shift-Tab goes up from one, → and ← open and go up at the ends of the
+    /// query, Backspace goes up on an empty query, and Esc clears, goes up or hides. Every other
+    /// command, and → and ← elsewhere or during an input method's composition, edits the text
+    /// as usual.
     public func control(
         _ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector
     ) -> Bool {
@@ -613,15 +759,32 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
             #selector(NSResponder.insertLineBreak(_:)):
             open(row: state.selection)
-        case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
-            // The field is the panel's only control; Tab would only select its text again.
-            break
+        case #selector(NSResponder.insertTab(_:)):
+            // On a row that isn't a group's, Tab does nothing: the field is the panel's only
+            // control, so moving the keys would only select its text again.
+            if selectsGroup { open(row: state.selection) }
+        case #selector(NSResponder.insertBacktab(_:)):
+            leaveGroup()
+        case #selector(NSResponder.moveRight(_:)):
+            let caret = textView.selectedRange()
+            guard !textView.hasMarkedText(), selectsGroup, caret.length == 0,
+                caret.location == textView.string.utf16.count
+            else { return false }
+            open(row: state.selection)
+        case #selector(NSResponder.moveLeft(_:)):
+            guard !textView.hasMarkedText(),
+                textView.selectedRange() == NSRange(location: 0, length: 0)
+            else { return false }
+            return leaveGroup()
+        case #selector(NSResponder.deleteBackward(_:)):
+            guard query.isEmpty else { return false }
+            return leaveGroup()
         case #selector(NSResponder.cancelOperation(_:)):
-            if query.isEmpty {
-                hide()
-            } else {
+            if !query.isEmpty {
                 panel.field.stringValue = ""
                 search()
+            } else if !leaveGroup() {
+                hide()
             }
         default:
             return false
@@ -643,5 +806,13 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
 extension SearchPanelController.Display {
     init(_ screen: NSScreen) {
         self.init(frame: screen.frame, visible: screen.visibleFrame)
+    }
+}
+
+extension SearchItem {
+    /// The id of the group this row opens; nil for any other row.
+    fileprivate var groupID: String? {
+        guard case .openGroup(let id) = target else { return nil }
+        return id
     }
 }

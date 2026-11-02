@@ -7,14 +7,15 @@ import Testing
 @Test func declaresThePlannedKeysAndDefaults() {
     #expect(
         Settings.Keys.all.map(\.name) == [
-            "hotkey", "searchApplications", "searchSystemSettings", "calculator", "appFolders",
-            "excludedApps", "maxResults", "dimUnused", "dimAfterDays", "showOnAllDisplays",
-            "launchAtLogin",
+            "hotkey", "searchApplications", "searchSystemSettings", "scriptCommands",
+            "calculator", "appFolders", "excludedApps", "maxResults", "dimUnused", "dimAfterDays",
+            "showOnAllDisplays", "launchAtLogin",
         ])
     let settings = Settings()
     #expect(settings.hotkey.text == "cmd+space")
     #expect(settings.searchApplications)
     #expect(settings.searchSystemSettings)
+    #expect(settings.scriptCommands)
     #expect(settings.calculator)
     #expect(
         settings.appFolders == [
@@ -52,10 +53,11 @@ import Testing
     #expect(build.problems.isEmpty)
 }
 
-@Test func buildsNothingWithBothSourcesOff() async throws {
+@Test func buildsNothingWithEverySourceOff() async throws {
     var settings = Settings()
     settings.searchApplications = false
     settings.searchSystemSettings = false
+    settings.scriptCommands = false
     let build = try await settings.indexBuilder().build()
     #expect(build.items.isEmpty)
     #expect(build.problems.isEmpty)
@@ -88,6 +90,7 @@ import Testing
     let changes: [(inout Settings) -> Void] = [
         { $0.searchApplications = false }, { $0.searchSystemSettings = false },
         { $0.appFolders = ["/Applications"] }, { $0.excludedApps = ["com.apple.Chess"] },
+        { $0.scriptCommands = false },
     ]
     for change in changes {
         var changed = base

@@ -25,9 +25,12 @@ public struct CommandProvider: Sendable {
         self.appName = appName
     }
 
+    /// The quit command's title, which the settings window's button shows too.
+    public var quitTitle: String { "Quit \(appName)" }
+
     /// The commands that are rows, with their titles.
     public var items: [SearchItem] {
-        [(Command.openSettings, "\(appName) Settings"), (.quit, "Quit \(appName)")].map {
+        [(Command.openSettings, "\(appName) Settings"), (.quit, quitTitle)].map {
             command, title in
             SearchItem(
                 id: command.id, kind: .command, title: title, subtitle: nil,

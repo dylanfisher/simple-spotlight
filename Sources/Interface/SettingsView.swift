@@ -9,10 +9,14 @@ struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     /// The model's recorder, observed apart from the model, which doesn't republish its changes.
     @ObservedObject private var recorder: ShortcutRecorder
+    let quitTitle: String
+    let quit: @MainActor () -> Void
 
-    init(model: SettingsModel) {
+    init(model: SettingsModel, quitTitle: String, quit: @escaping @MainActor () -> Void) {
         self.model = model
         recorder = model.recorder
+        self.quitTitle = quitTitle
+        self.quit = quit
     }
 
     static let width: CGFloat = 520
@@ -30,6 +34,11 @@ struct SettingsView: View {
             }
             .disabled(model.isFileBroken)
             file
+            shortcut
+                .disabled(model.isFileBroken)
+            SettingsSection {
+                Button(quitTitle, action: quit)
+            }
         }
         .frame(width: Self.width)
         .frame(minHeight: 360, idealHeight: 680)
@@ -60,17 +69,6 @@ struct SettingsView: View {
 
     private var general: some View {
         SettingsSection {
-            LabeledRow("Shortcut") {
-                RecorderButton(recorder: recorder, chord: model.settings.hotkey)
-            }
-            if let refusal = recorder.refusal, recorder.isRecording {
-                Text(refusal)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            if let conflict = model.hotKeyConflict, conflict.chord == model.settings.hotkey {
-                conflictRow(conflict)
-            }
             if LoginItem.isAvailable {
                 Toggle("Open at login", isOn: binding(\.launchAtLogin))
             }
@@ -80,25 +78,11 @@ struct SettingsView: View {
         }
     }
 
-    private func conflictRow(_ conflict: SettingsModel.Conflict) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Label(conflict.title, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Spacer()
-            if conflict.isSystemShortcut {
-                Button("Open Keyboard Shortcuts", action: model.openKeyboardShortcuts)
-            } else {
-                Text("Record another shortcut.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .font(.callout)
-    }
-
     private var results: some View {
         SettingsSection("Results") {
             Toggle("Apps", isOn: binding(\.searchApplications))
             Toggle(SettingsPaneProvider.subtitle, isOn: binding(\.searchSystemSettings))
+            Toggle("Script commands", isOn: binding(\.scriptCommands))
             Toggle("Calculator", isOn: binding(\.calculator))
             Stepper(
                 value: binding(\.maxResults), in: Search.Settings.maxResultsRange
@@ -106,7 +90,8 @@ struct SettingsView: View {
                 LabeledRow("Most rows") { Text("\(model.settings.maxResults)") }
             }
             DescribedToggle(
-                "Dim apps not opened lately", detail: "The apps and panes you use stand out.",
+                "Dim apps not opened lately",
+                detail: "The apps, panes and scripts you use stand out.",
                 isOn: binding(\.dimUnused))
             Stepper(
                 value: binding(\.dimAfterDays), in: Search.Settings.dimAfterDaysRange
@@ -157,6 +142,38 @@ struct SettingsView: View {
             Text("Changes here are saved to the file, and edits to the file show here.")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// The hotkey's recorder, with why a chord was refused or the hotkey couldn't be registered.
+    private var shortcut: some View {
+        SettingsSection {
+            LabeledRow("Shortcut") {
+                RecorderButton(recorder: recorder, chord: model.settings.hotkey)
+            }
+            if let refusal = recorder.refusal, recorder.isRecording {
+                Text(refusal)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            if let conflict = model.hotKeyConflict, conflict.chord == model.settings.hotkey {
+                conflictRow(conflict)
+            }
+        }
+    }
+
+    private func conflictRow(_ conflict: SettingsModel.Conflict) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Label(conflict.title, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Spacer()
+            if conflict.isSystemShortcut {
+                Button("Open Keyboard Shortcuts", action: model.openKeyboardShortcuts)
+            } else {
+                Text("Record another shortcut.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.callout)
     }
 
     // MARK: Parts

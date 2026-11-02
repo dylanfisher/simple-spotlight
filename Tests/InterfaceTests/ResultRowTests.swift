@@ -66,6 +66,14 @@ private func boldCharacters(_ title: AttributedString) -> String {
     }
 }
 
+@Test func aScriptRowShowsTheTerminalSymbol() {
+    let script = SearchItem(
+        id: "tv", kind: .script, title: "TV", subtitle: nil,
+        target: .runScript(URL(fileURLWithPath: "/commands/tv.sh")))
+
+    #expect(ResultRow.icon(for: script) == .symbol("terminal"))
+}
+
 /// `fill` as drawn in the appearance `name`, in gray.
 @MainActor private func resolved(_ fill: NSColor, in name: NSAppearance.Name) throws -> NSColor {
     let appearance = try #require(NSAppearance(named: name))
@@ -141,4 +149,21 @@ private func boldCharacters(_ title: AttributedString) -> String {
 @Test func theIconFillsMostOfTheRow() {
     #expect(ResultRow.iconSize >= ResultRow.height * 0.8)
     #expect(ResultRow.iconSize < ResultRow.height)
+}
+
+@Test func onlyAGroupRowShowsAFolderAndAChevron() {
+    let group = SearchItem(
+        id: "living-room", kind: .group, title: "Living Room", subtitle: nil,
+        target: .openGroup("living-room"))
+    let script = SearchItem(
+        id: "tv", kind: .script, title: "TV", subtitle: nil,
+        target: .runScript(URL(fileURLWithPath: "/commands/tv.sh")))
+    let command = SearchItem(
+        id: "quit", kind: .command, title: "Quit", subtitle: nil, target: .command("quit"))
+
+    #expect(ResultRow.icon(for: group) == .symbol("folder"))
+    #expect(ResultRow.icon(for: script) == .symbol("terminal"))
+    #expect(ResultRow.showsChevron(for: group))
+    #expect(!ResultRow.showsChevron(for: script))
+    #expect(!ResultRow.showsChevron(for: command))
 }

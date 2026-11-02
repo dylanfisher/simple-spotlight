@@ -99,7 +99,7 @@ public final class AppCoordinator {
         self.quit = quit
         self.log = log
         panel = SearchPanelController(
-            index: SearchIndex(items: commands.items), settings: Search.Settings(),
+            index: SearchIndex(items: commands.items), groups: [:], settings: Search.Settings(),
             calculator: calculator, opener: opener, icons: icons, configFile: makeConfigFile,
             openSettings: { [weak self] in self?.openSettings() },
             runCommand: { [weak self] in self?.run(command: $0) },
@@ -111,7 +111,8 @@ public final class AppCoordinator {
             openKeyboardShortcuts: { opener.open(HotKeyConflictNotice.keyboardShortcutsURL) },
             recordingChanged: { [weak self] in self?.recordingChanged($0) })
         settingsWindow = SettingsWindowController(
-            model: settingsModel, title: "\(appName) Settings", quit: quit,
+            model: settingsModel, title: "\(appName) Settings",
+            quitTitle: commands.quitTitle, quit: quit,
             ordersWindow: ordersPanel)
         updateUsage { usage in try await usage.load(at: now()) }
     }
@@ -306,7 +307,7 @@ public final class AppCoordinator {
         // An app may have a new icon since the last build.
         icons.forgetAll()
         indexProblems = build.problems
-        panel.index = SearchIndex(items: build.items + commands.items)
+        panel.replaceIndex(SearchIndex(items: build.items + commands.items), groups: build.groups)
         showProblems()
     }
 

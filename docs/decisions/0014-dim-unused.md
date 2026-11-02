@@ -1,4 +1,4 @@
-# 0014. Dim the rows of apps and panes not opened lately
+# 0014. Dim the rows of apps, panes and scripts not opened lately
 
 - **Date:** 2026-10-31
 - **Status:** accepted
@@ -6,19 +6,19 @@
 ## Context
 
 The user asked for rows of items they haven't opened, or haven't opened in the last X days, to
-look subdued, so the apps they use stand out at a glance. Usage already ranks them first
-(decision 0010); this is about how a row looks, not where it goes. The plan's P11 adds
+look subdued, so the apps they use stand out at a glance. Usage already ranks them first (decision
+0010); this is about how a row looks, not where it goes. The plan's P11 adds
 `dimUnused` (default true) and `dimAfterDays` (default 30), takes the last-opened date from the
 usage store with no new storage, and asks that a keystroke not compute dates per row.
 
 ## Decision
 
-- **What dims.** With `dimUnused` on, the row of an app or System Settings pane whose last open
-  from the panel (`UsageStore.Usage.Opens.lastOpened`) is more than `dimAfterDays` days ago, or
-  that has no entry, draws subdued. An open exactly `dimAfterDays` ago still counts as recent. A
-  day is 24 hours, not a calendar day. Calculator answers, commands and problems never dim: they
-  aren't recorded (decision 0010), so they would always be dim. `SearchItem.Kind.countsAsOpen`
-  holds which kinds are recorded, for both rules.
+- **What dims.** With `dimUnused` on, the row of an app, System Settings pane or script command
+  whose last open from the panel (`UsageStore.Usage.Opens.lastOpened`) is more than `dimAfterDays`
+  days ago, or that has no entry, draws subdued. An open exactly `dimAfterDays` ago still counts
+  as recent. A day is 24 hours, not a calendar day. Calculator answers, built-in commands, groups
+  and problems never dim: they aren't recorded (decision 0010), so they would always be dim.
+  `SearchItem.Kind.countsAsOpen` holds which kinds are recorded, for both rules.
 - **The selected row never dims.** It is the one Return opens, so it reads at full strength.
 - **How it looks.** The row's icon and text draw at 0.55 opacity, 0.7 with Increase Contrast.
   The selection fill isn't faded. The subtitle is already a secondary color, so at 0.55 it is

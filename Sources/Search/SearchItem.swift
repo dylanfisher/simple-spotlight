@@ -1,18 +1,22 @@
 import Base
 import Foundation
 
-/// One row the panel can show and open: an app, a System Settings pane, a calculator answer, a
-/// built-in command, or a problem to fix.
+/// One row the panel can show and open: an app, a System Settings pane, a script command or
+/// group of them, a calculator answer, a built-in command, or a problem to fix.
 public struct SearchItem: Sendable, Identifiable {
     public enum Kind: Sendable, Equatable {
         case app, settingsPane, calculation, command
+        /// One of the user's scripts in the commands folder.
+        case script
+        /// A folder in the commands folder, whose rows show when it is opened.
+        case group
         /// Something wrong, such as a config error, shown above the results.
         case problem
 
-        /// Whether opening an item of this kind counts toward usage: apps and panes, which the
-        /// user opens, and not answers, commands or problems
+        /// Whether opening an item of this kind counts toward usage: apps, panes and scripts,
+        /// which the user opens, and not answers, commands, groups or problems
         /// (docs/decisions/0010-usage-ranking.md).
-        public var countsAsOpen: Bool { self == .app || self == .settingsPane }
+        public var countsAsOpen: Bool { self == .app || self == .settingsPane || self == .script }
     }
 
     /// What opening the item does.
@@ -25,10 +29,14 @@ public struct SearchItem: Sendable, Identifiable {
         case copyText(String)
         /// Runs the built-in command with this identifier.
         case command(String)
+        /// Runs the executable file at the URL.
+        case runScript(URL)
+        /// Shows the rows of the group with this id.
+        case openGroup(String)
     }
 
     /// Stable across launches and index rebuilds, so usage can be keyed by it: a bundle ID, a
-    /// path, or a command's identifier.
+    /// path, a command's identifier, or a script's or group's path in the commands folder.
     public let id: String
     public let kind: Kind
     public let title: String

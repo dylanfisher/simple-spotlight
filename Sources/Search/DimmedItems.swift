@@ -1,8 +1,8 @@
 import Foundation
 
-/// The items whose rows draw subdued: with `dimUnused` on, the apps and panes not opened from
-/// the panel within `dimAfterDays` (docs/decisions/0014-dim-unused.md). Built with `UsageBoost`,
-/// when the panel shows, so a keystroke only looks ids up.
+/// The items whose rows draw subdued: with `dimUnused` on, the apps, panes and scripts not opened
+/// from the panel within `dimAfterDays` (docs/decisions/0014-dim-unused.md). Built with
+/// `UsageBoost`, when the panel shows, so a keystroke only looks ids up.
 public struct DimmedItems: Sendable {
     /// Nothing dims.
     public static let none = DimmedItems(recent: nil)
