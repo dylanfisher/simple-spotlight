@@ -16,6 +16,7 @@ private final class StubOpener: ResultOpener {
     func openApplication(at url: URL) { opened.append(url) }
     func open(_ url: URL) { opened.append(url) }
     func reveal(_ url: URL) {}
+    func run(_ url: URL) {}
     func copy(_ text: String) { copied.append(text) }
     func clipboardText() -> String? { nil }
 }

@@ -439,8 +439,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
     // MARK: Opening
 
     /// Hides the panel and opens the row at `index`: launches an app, opens a pane, copies a
-    /// calculator answer or runs a command. An index past the rows does nothing. Only apps and
-    /// panes count toward usage (docs/decisions/0010-usage-ranking.md).
+    /// calculator answer, runs a command or runs a script. An index past the rows does nothing. Only
+    /// apps, panes and scripts count toward usage (docs/decisions/0010-usage-ranking.md).
     func open(row index: Int) {
         guard state.rows.indices.contains(index) else { return }
         let item = state.rows[index].item
@@ -455,8 +455,8 @@ public final class SearchPanelController: NSObject, NSTextFieldDelegate, NSWindo
             opener.copy(text)
         case .command(let id):
             runCommand(id)
-        case .runScript:
-            break
+        case .runScript(let url):
+            opener.run(url)
         }
     }
 

@@ -12,6 +12,7 @@ private final class StubOpener: ResultOpener {
         case application(URL)
         case open(URL)
         case reveal(URL)
+        case run(URL)
         case copy(String)
     }
 
@@ -21,6 +22,7 @@ private final class StubOpener: ResultOpener {
     func openApplication(at url: URL) { calls.append(.application(url)) }
     func open(_ url: URL) { calls.append(.open(url)) }
     func reveal(_ url: URL) { calls.append(.reveal(url)) }
+    func run(_ url: URL) { calls.append(.run(url)) }
     func copy(_ text: String) { calls.append(.copy(text)) }
     func clipboardText() -> String? { clipboard }
 }
@@ -409,6 +411,22 @@ extension Fixture {
 
     #expect(fixture.commands == ["quit"])
     #expect(fixture.opener.calls.isEmpty)
+    #expect(!fixture.controller.isShown)
+}
+
+/// A script counts as an open, as an app does (docs/decisions/0010-usage-ranking.md).
+@MainActor @Test func returnOnAScriptRowRunsItAndCountsAsAnOpen() throws {
+    let url = URL(fileURLWithPath: "/tmp/simple-spotlight-test/commands/tv.sh")
+    let script = SearchItem(
+        id: SearchItem.builtInID("commands/tv.sh"), kind: .script, title: "TV", subtitle: nil,
+        target: .runScript(url))
+    let fixture = Fixture(items: [safari, script])
+    try fixture.type("tv")
+
+    try fixture.press("\r", keyCode: 36)
+
+    #expect(fixture.opener.calls == [.run(url)])
+    #expect(fixture.recorded == [Recorded(id: script.id, query: "tv")])
     #expect(!fixture.controller.isShown)
 }
 
