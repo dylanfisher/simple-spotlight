@@ -28,10 +28,10 @@ public struct ScriptCommandProvider: Sendable {
     /// in file name order, as Finder sorts names. Dotfiles and names that start with `_` are
     /// skipped, other than `_group`, which is read for its group's header. A missing folder
     /// gives nothing and no problem, since having the folder is how the feature is turned on.
-    /// A script that isn't executable, a header that can't be read, or a file that isn't a
-    /// regular file or folder (links to scripts are followed, links to folders are not) is left out and reported as a problem. A
-    /// group whose `_group` can't be read is still shown, under its folder's name. Throws when
-    /// cancelled.
+    /// A script that isn't executable, a header that can't be read, a link to a folder, or a
+    /// file that isn't a regular file or folder is left out and reported as a problem; links to
+    /// scripts are followed. A group whose `_group` can't be read is still shown, under its
+    /// folder's name. Throws when cancelled.
     ///
     /// It blocks on the disk; callers go through `IndexBuilder.build()`, which runs it off the
     /// caller's actor.
@@ -185,11 +185,11 @@ public struct ScriptCommandProvider: Sendable {
     private enum Kind { case folder, linkToFolder, regularFile }
 
     /// What `url` is once links are followed. `stat` does the following; the keys of
-    /// `URLResourceValues` on a link describe the link itself. A link to a folder isn't a group and is reported:
-    /// FSEvents doesn't follow links, so changes in the folder wouldn't update the index, and a
-    /// link up the tree would make the scan loop. Throws a problem for a link to nothing and for
-    /// anything else that isn't a file or folder, such as a named pipe, which blocks the reader
-    /// that opens it.
+    /// `URLResourceValues` on a link describe the link itself. A link to a folder isn't a group,
+    /// and is reported: FSEvents doesn't follow links, so changes in the folder wouldn't update
+    /// the index, and a link up the tree would make the scan loop. Throws a problem for a link
+    /// to nothing and for anything else that isn't a file or folder, such as a named pipe,
+    /// which blocks the reader that opens it.
     private static func kind(of url: URL) throws -> Kind {
         var info = stat()
         if stat(url.path, &info) != 0 {
