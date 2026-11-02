@@ -66,6 +66,14 @@ private func boldCharacters(_ title: AttributedString) -> String {
     }
 }
 
+@Test func aScriptRowShowsTheTerminalSymbol() {
+    let script = SearchItem(
+        id: "tv", kind: .script, title: "TV", subtitle: nil,
+        target: .runScript(URL(fileURLWithPath: "/commands/tv.sh")))
+
+    #expect(ResultRow.icon(for: script) == .symbol("terminal"))
+}
+
 /// `fill` as drawn in the appearance `name`, in gray.
 @MainActor private func resolved(_ fill: NSColor, in name: NSAppearance.Name) throws -> NSColor {
     let appearance = try #require(NSAppearance(named: name))

@@ -38,8 +38,9 @@ ties within a kind, and Chess is a better kind of match for "c" than "Google Chr
   which keeps the comparator a strict weak order; `SearchIndex.precedes` gives the full order. A
   lifted item passes the unlifted matches one kind better and never a kind two better, and only
   matches are ranked, so usage can't make a non-match appear.
-- **What counts as an open.** An app or System Settings pane opened from the panel, at the time
-  the open is asked of the workspace. Calculator answers, problem rows and the built-in commands
+- **What counts as an open.** An app, System Settings pane or script command opened from the
+  panel, at the time the open or run is asked for. Scripts are things the user picks by name,
+  as apps are, so a used one should rise. Calculator answers, problem rows and the built-in commands
   aren't recorded: a used "Quit Simple Spotlight" would rise above "QuickTime Player" for "q".
   Revealing in Finder isn't an open of the item. A launch that fails afterwards still counts;
   the workspace reports that later, and it is rare.

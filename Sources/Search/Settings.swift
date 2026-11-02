@@ -10,6 +10,7 @@ public struct Settings: Sendable, Equatable {
     public var hotkey: KeyChord = Keys.hotkey.defaultValue
     public var searchApplications: Bool = Keys.searchApplications.defaultValue
     public var searchSystemSettings: Bool = Keys.searchSystemSettings.defaultValue
+    public var scriptCommands: Bool = Keys.scriptCommands.defaultValue
     public var calculator: Bool = Keys.calculator.defaultValue
     /// As the file writes them; `indexBuilder(home:languages:)` places the `~/` ones.
     public var appFolders: [String] = Keys.appFolders.defaultValue
@@ -33,7 +34,7 @@ public struct Settings: Sendable, Equatable {
     public var indexKeys: IndexKeys {
         IndexKeys(
             searchApplications: searchApplications, searchSystemSettings: searchSystemSettings,
-            appFolders: appFolders, excludedApps: excludedApps)
+            scriptCommands: scriptCommands, appFolders: appFolders, excludedApps: excludedApps)
     }
 
     /// The index these settings ask for; see `IndexKeys.builder(home:languages:)`.
@@ -49,11 +50,13 @@ public struct Settings: Sendable, Equatable {
     public struct IndexKeys: Sendable, Equatable {
         let searchApplications: Bool
         let searchSystemSettings: Bool
+        let scriptCommands: Bool
         let appFolders: [String]
         let excludedApps: [String]
 
-        /// Apps from `appFolders`, `~` standing for `home`, and System Settings panes, each only
-        /// when its setting is on, less `excludedApps`.
+        /// Apps from `appFolders`, `~` standing for `home`, System Settings panes, and the
+        /// scripts in the commands folder in `home`, each only when its setting is on, less
+        /// `excludedApps`.
         func builder(home: URL, languages: [String]) -> IndexBuilder {
             let apps =
                 searchApplications
@@ -69,7 +72,13 @@ public struct Settings: Sendable, Equatable {
                     languages: languages)
                 : SettingsPaneProvider(
                     extensionFolders: [], preferencePaneFolders: [], languages: languages)
-            return IndexBuilder(apps: apps, settingsPanes: panes, excludedIDs: Set(excludedApps))
+            let scripts =
+                scriptCommands
+                ? ScriptCommandProvider(
+                    folder: HomePath.folder(HomePath.scriptCommands, home: home))
+                : nil
+            return IndexBuilder(
+                apps: apps, settingsPanes: panes, scripts: scripts, excludedIDs: Set(excludedApps))
         }
     }
 }
@@ -86,6 +95,9 @@ extension Settings {
         static let searchSystemSettings = Key(
             \.searchSystemSettings, "searchSystemSettings", .bool, default: true,
             "Find System Settings panes.")
+        static let scriptCommands = Key(
+            \.scriptCommands, "scriptCommands", .bool, default: true,
+            "Find the scripts in \(HomePath.scriptCommands), and run one when you open its row.")
         static let calculator = Key(
             \.calculator, "calculator", .bool, default: true,
             "Show the answer when the search is arithmetic, such as 2*(3+4).")
@@ -115,8 +127,9 @@ extension Settings {
 
         /// Every key, in the order the default file lists them.
         static let all: [any AnyKey] = [
-            hotkey, searchApplications, searchSystemSettings, calculator, appFolders,
-            excludedApps, maxResults, dimUnused, dimAfterDays, showOnAllDisplays, launchAtLogin,
+            hotkey, searchApplications, searchSystemSettings, scriptCommands, calculator,
+            appFolders, excludedApps, maxResults, dimUnused, dimAfterDays, showOnAllDisplays,
+            launchAtLogin,
         ]
     }
 

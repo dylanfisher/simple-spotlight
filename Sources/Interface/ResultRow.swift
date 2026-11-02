@@ -150,6 +150,8 @@ struct ResultRow: View {
             return .file(CalculatorProvider.calculatorApp.path(percentEncoded: false))
         case .command:
             return .symbol("gearshape")
+        case .script:
+            return .symbol("terminal")
         case .problem:
             return .symbol("exclamationmark.triangle")
         case .app:
