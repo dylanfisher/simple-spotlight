@@ -64,12 +64,18 @@ end of the query with no text selected and a group row is selected; otherwise it
 cursor. Shift-Tab goes up a level, as does ← with the cursor at the start of the query, and
 Backspace on an empty query. Esc clears the query if there is one, then goes up a level, then
 hides the panel. A breadcrumb chip at the left of the field names the groups opened, and
-clicking it goes up a level. Entering a group is announced to VoiceOver as "<title>, N
+clicking it goes up a level. Entering a group clears the field after remembering the query and
+the group's row at the level it came from; going up puts that query back, with the caret at its
+end and the group's row selected. Entering a group is announced to VoiceOver as "<title>, N
 commands"; leaving announces the parent's title, or "Search" at the top level. A rebuild of the
-index keeps the panel in its group if the group still exists, and goes to the top level if not.
+index keeps the panel in its group if the group still exists. If not, the panel goes up to the
+deepest level that does, as if the user had left each lost group, and selects the lost group's
+row if it is still there.
 
-**Hiding resets to the top level.** The query is kept, as it is at the top level, including one
-typed inside a group. This is the current behavior and the owner hasn't confirmed it.
+**Hiding goes up to the top level.** Hiding inside a group goes up through every level as
+leaving each would, so the next show is at the top level with the query it had when the
+outermost group was entered and that group's row selected. Hiding at the top level keeps the
+query, as before.
 
 ## Alternatives considered
 
